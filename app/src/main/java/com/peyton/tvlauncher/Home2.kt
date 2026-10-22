@@ -93,7 +93,12 @@ fun HomeV2(st: LauncherState, actions: Actions) {
 }
 
 /** Key prefix for focus requesters of the app surface in each layout. */
-private fun prefixOf(l: HomeLayout) = when (l) { HomeLayout.CINEMATIC -> "row"; HomeLayout.SIDE_RAIL -> "rail"; else -> "dock" }
+private fun prefixOf(l: HomeLayout) = when (l) {
+  HomeLayout.CINEMATIC -> "row"; HomeLayout.SIDE_RAIL -> "rail"; HomeLayout.GLASS, HomeLayout.MINIMAL -> "dock"
+  else -> stylePrefix(l)
+}
+/** Focus-key prefix of a styled home (one per style so focus restore never lands on another style's item). */
+fun stylePrefix(l: HomeLayout) = l.name.lowercase()
 
 fun enterDockEdit(st: LauncherState, startPkg: String? = null) {
   val visible = st.favoriteApps.map { it.pkg }
@@ -210,6 +215,14 @@ private fun LayoutBody(env: HomeEnv, layout: HomeLayout) {
     HomeLayout.CINEMATIC -> CinematicLayout(env)
     HomeLayout.SIDE_RAIL -> SideRailLayout(env)
     HomeLayout.MINIMAL -> MinimalLayout(env)
+    HomeLayout.RETRO -> RetroHome(env)
+    HomeLayout.CONSOLE -> ConsoleHome(env)
+    HomeLayout.MAGAZINE -> MagazineHome(env)
+    HomeLayout.NEON -> NeonHome(env)
+    HomeLayout.SPACE -> SpaceHome(env)
+    HomeLayout.COMIC -> ComicHome(env)
+    HomeLayout.ARCADE -> ArcadeHome(env)
+    HomeLayout.SHELF -> ShelfHome(env)
   }
 }
 
@@ -709,8 +722,8 @@ internal object SoftGlow {
   private val bayer = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
 
   /** Coverage (0..1) of the blurred rounded rect, before peak scaling; exposed for tests. */
-  fun coverage(w: Int, h: Int, m: Int, sigma: Float): FloatArray {
-    val W = w + 2 * m; val H = h + 2 * m; val r = 0.27f * w
+  fun coverage(w: Int, h: Int, m: Int, sigma: Float, corner: Float = 0.27f * w): FloatArray {
+    val W = w + 2 * m; val H = h + 2 * m; val r = corner.coerceAtMost(minOf(w, h) / 2f)
     val a = FloatArray(W * H)
     for (y in 0 until H) for (x in 0 until W) {
       // signed distance to the rounded rect, antialiased over 1px
@@ -737,9 +750,12 @@ internal object SoftGlow {
       for (i in -r..r) sum += src[i.coerceIn(0, H - 1) * W + x]
       for (y in 0 until H) { dst[y * W + x] = sum / n; sum += src[(y + r + 1).coerceAtMost(H - 1) * W + x] - src[(y - r).coerceAtLeast(0) * W + x] } }
   }
-  private fun mask(w: Int, h: Int, m: Int, sigma: Float, peak: Float, rgb: Int): ImageBitmap {
+  /** Any rounded-rect glow (styled homes): [corner] px radius, white (tint with SrcIn) or black when [black]. */
+  fun custom(w: Int, h: Int, m: Int, corner: Float, peak: Float, black: Boolean = false) =
+    get("c$w:$h:$m:${corner.toInt()}:$peak:$black") { mask(w, h, m, m / 4f, peak, if (black) 0xFF000000.toInt() else 0, corner) }
+  private fun mask(w: Int, h: Int, m: Int, sigma: Float, peak: Float, rgb: Int, corner: Float = 0.27f * w): ImageBitmap {
     val W = w + 2 * m; val H = h + 2 * m
-    val cov = coverage(w, h, m, sigma)
+    val cov = coverage(w, h, m, sigma, corner)
     // Normalize so the tile edge (≈ 0.5 coverage) reaches [peak]; inside the tile is hidden by the tile itself.
     val px = IntArray(W * H)
     val cr = (rgb shr 16) and 0xFF; val cg = (rgb shr 8) and 0xFF; val cb = rgb and 0xFF

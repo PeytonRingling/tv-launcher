@@ -12,6 +12,14 @@ enum class HomeLayout(val title: String, val blurb: String) {
   CINEMATIC("Cinematic", "Full-bleed photo, small clock and cards top-right, big app row bottom-left."),
   SIDE_RAIL("Side rail", "Clock and cards in a glass column, every app in a grid on the right."),
   MINIMAL("Minimal", "Just the photo and a small clock. The dock appears when you press a button."),
+  RETRO("Retro terminal", "A glowing green CRT: apps in a text menu, the clock and weather typed out like a terminal."),
+  CONSOLE("Console dashboard", "Game-console home: the focused app's art fills the screen above a row of big tiles."),
+  MAGAZINE("Magazine", "An editorial front page: serif clock, the verse as a pull quote, apps as the table of contents."),
+  NEON("Neon synthwave", "Sunset sky, a scrolling neon grid and apps lit like neon signs."),
+  SPACE("Space", "The clock is the sun; your apps orbit it. Left and right turn the orbit."),
+  COMIC("Comic book", "Panels, Ben-Day dots and speech bubbles; apps pop like a POW."),
+  ARCADE("Arcade", "A cabinet marquee with the clock and apps as game cartridges on a rack."),
+  SHELF("Record shelf", "Apps as records on a wooden shelf; the record slides out and spins."),
 }
 
 enum class CardSlot(val title: String) { OFF("Off"), LEFT("Top-left"), RIGHT("Top-right") }

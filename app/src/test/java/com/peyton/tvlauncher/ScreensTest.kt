@@ -620,6 +620,76 @@ class ScreensTest {
     println("GLOW_COVERAGE_ROW edge->out: " + row.joinToString(" ") { "%.3f".format(it) })
     for (i in 1 until out.size) assertTrue("alpha step at $i: ${out[i - 1]} -> ${out[i]}", out[i] <= out[i - 1] + 1.0)
   }
+
+  // ======================= Styled homes (v4.4) =======================
+  private val styleKeys = mapOf(HomeLayout.RETRO to Key.DirectionDown, HomeLayout.MAGAZINE to Key.DirectionDown)
+  private val styleShots = listOf(HomeLayout.RETRO to "H1_retro", HomeLayout.CONSOLE to "H2_console", HomeLayout.MAGAZINE to "H3_magazine",
+    HomeLayout.NEON to "H4_neon", HomeLayout.SPACE to "H5_space", HomeLayout.COMIC to "H6_comic", HomeLayout.ARCADE to "H7_arcade", HomeLayout.SHELF to "H8_shelf")
+  private fun styleState(l: HomeLayout, wall: String = "canyon") = verseState(webShort, true, wall).apply {
+    changeCards(linkedMapOf(HomeCard.WEATHER to CardSlot.LEFT, HomeCard.VERSE to CardSlot.RIGHT)); changeLayout(l)
+    photoOfDay = Photos.decode(ctx, Photo(asset = "wallpapers/coast.jpg"), 640)!!.asImageBitmap()
+  }
+  private fun focusedTag(): String? = rule.onAllNodes(androidx.compose.ui.test.isFocused(), useUnmergedTree = true).fetchSemanticsNodes()
+    .firstNotNullOfOrNull { it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.TestTag) { null } }
+  /** Renders home (entry settled), then after two D-pad moves (focused state), plus mid-entry and mid-launch frames. */
+  private fun styleRender(l: HomeLayout, name: String, frames: Boolean = true) {
+    val st = styleState(l)
+    val dir = styleKeys[l] ?: Key.DirectionRight
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    if (frames) { rule.mainClock.advanceTimeBy(280); Thread.sleep(150); rule.onRoot().captureRoboImage("../screens/styles/${name}_c_entry_mid.png") }
+    repeat(5) { rule.mainClock.advanceTimeBy(500); Thread.sleep(120) }
+    rule.onRoot().captureRoboImage("../screens/styles/${name}_a_home.png")
+    val first = focusedTag()
+    assertEquals("$l: first app focused", "${stylePrefix(l)}:com.google.android.youtube.tv", first)
+    rule.onRoot().performKeyInput { pressKey(dir) }; rule.mainClock.advanceTimeBy(250)
+    rule.onRoot().performKeyInput { pressKey(dir) }
+    rule.mainClock.advanceTimeBy(120); Thread.sleep(80)
+    if (frames) rule.onRoot().captureRoboImage("../screens/styles/${name}_d_focus_moving.png")
+    repeat(3) { rule.mainClock.advanceTimeBy(400); Thread.sleep(80) }
+    assertEquals("$l: D-pad moved focus two items", "${stylePrefix(l)}:com.disney.disneyplus", focusedTag())
+    rule.onRoot().captureRoboImage("../screens/styles/${name}_b_focused.png")
+    if (frames) {   // launch transition, mid-way
+      rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+      rule.mainClock.advanceTimeBy(260); Thread.sleep(80)
+      rule.onRoot().captureRoboImage("../screens/styles/${name}_e_launch_mid.png")
+    }
+  }
+  @Test fun h1Retro() = styleRender(HomeLayout.RETRO, "H1_retro")
+  @Test fun h2Console() = styleRender(HomeLayout.CONSOLE, "H2_console")
+  @Test fun h3Magazine() = styleRender(HomeLayout.MAGAZINE, "H3_magazine")
+  @Test fun h4Neon() = styleRender(HomeLayout.NEON, "H4_neon")
+  @Test fun h5Space() = styleRender(HomeLayout.SPACE, "H5_space")
+  @Test fun h6Comic() = styleRender(HomeLayout.COMIC, "H6_comic")
+  @Test fun h7Arcade() = styleRender(HomeLayout.ARCADE, "H7_arcade")
+  @Test fun h8Shelf() = styleRender(HomeLayout.SHELF, "H8_shelf")
+  /** Arcade attract mode after 25 s idle; the first key only wakes it (focus doesn't move). */
+  @Test fun h7ArcadeAttract() {
+    val st = styleState(HomeLayout.ARCADE)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(4) { rule.mainClock.advanceTimeBy(500); Thread.sleep(80) }
+    rule.mainClock.advanceTimeBy(26_000); Thread.sleep(150); rule.mainClock.advanceTimeBy(700)
+    rule.onRoot().captureRoboImage("../screens/styles/H7_arcade_f_attract.png")
+    rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+    rule.mainClock.advanceTimeBy(800)
+    assertEquals("arcade:com.google.android.youtube.tv", focusedTag())
+    rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+    rule.mainClock.advanceTimeBy(600)
+    assertEquals("arcade:com.netflix.ninja", focusedTag())
+  }
+  /** Hold-OK/MENU opens the app menu from a styled home, and closing it restores focus to the same item. */
+  @Test fun stylesMenuOpensFromHoldOk() {
+    val st = styleState(HomeLayout.SPACE)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(4) { rule.mainClock.advanceTimeBy(500); Thread.sleep(80) }
+    rule.onRoot().performKeyInput { keyDown(Key.Menu); keyUp(Key.Menu) }
+    rule.mainClock.advanceTimeBy(500)
+    assertEquals("com.google.android.youtube.tv", st.menuFor?.pkg)
+    st.menuFor = null; rule.mainClock.advanceTimeBy(600)
+    assertEquals("focus restored after the overlay", "space:com.google.android.youtube.tv", focusedTag())
+  }
 }
 
 private fun Modifier.androidx_bg() = this.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF1A2236), androidx.compose.ui.graphics.Color(0xFF0B0D14))))
