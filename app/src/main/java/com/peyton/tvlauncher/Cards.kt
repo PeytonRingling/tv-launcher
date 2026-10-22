@@ -32,6 +32,7 @@ import java.time.temporal.IsoFields
 import java.util.Locale
 
 private val CardDark = Color(0xFF101115)
+const val NO_ZIP = "Set your ZIP code in Settings › Weather location to see the forecast."
 private val CardShape = RoundedCornerShape(24.dp)
 
 /** Vertical stack of glass cards for one slot. */
@@ -45,8 +46,10 @@ fun CardStack(cards: List<HomeCard>, st: LauncherState, actions: Actions, canFoc
 @Composable
 fun HomeCardView(card: HomeCard, st: LauncherState, actions: Actions, canFocus: Boolean, width: Dp) {
   when (card) {
-    HomeCard.WEATHER -> st.weather?.let { WeatherCard(it, st.celsius, Modifier.width(width)) } ?: Placeholder("WEATHER", "Waiting for the forecast…", width)
-    HomeCard.WEATHER3 -> st.weather?.let { Weather3Card(it, st.celsius, width) } ?: Placeholder("3-DAY", "Waiting for the forecast…", width)
+    HomeCard.WEATHER -> if (st.place == null) Placeholder("WEATHER", NO_ZIP, width)
+      else st.weather?.let { WeatherCard(it, st.celsius, Modifier.width(width), st.place!!.label) } ?: Placeholder("WEATHER", "Waiting for the forecast…", width)
+    HomeCard.WEATHER3 -> if (st.place == null) Placeholder("3-DAY", NO_ZIP, width)
+      else st.weather?.let { Weather3Card(it, st.celsius, width, st.place!!.label) } ?: Placeholder("3-DAY", "Waiting for the forecast…", width)
     HomeCard.INPUTS -> InputsCard(st.inputs, canFocus, { st.inputsOpen = true }, Modifier.width(width))
     HomeCard.DATE -> DateCard(width)
     HomeCard.RECENT -> RecentCard(st, actions, canFocus, width)
@@ -69,12 +72,12 @@ private fun Placeholder(title: String, msg: String, width: Dp) {
 }
 
 @Composable
-fun WeatherCard(w: Weather, celsius: Boolean, modifier: Modifier) {
+fun WeatherCard(w: Weather, celsius: Boolean, modifier: Modifier, place: String) {
   Column(modifier.frosted(CardShape).padding(horizontal = 18.dp, vertical = 15.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically) {
       Image(rememberVectorPainter(Icons.Filled.LocationOn), null, Modifier.size(13.dp), colorFilter = ColorFilter.tint(Ink.copy(alpha = 0.92f)))
       Spacer(Modifier.width(4.dp))
-      T(WeatherApi.PLACE, 12.sp, weight = FontWeight.SemiBold, color = Ink.copy(alpha = 0.92f), shadow = TextShadow)
+      T(place, 12.sp, weight = FontWeight.SemiBold, color = Ink.copy(alpha = 0.92f), shadow = TextShadow)
     }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
       T(WeatherApi.fmt(w.tempF, celsius), 46.sp, weight = FontWeight.Light, spacing = (-2).sp, shadow = TextShadow)
@@ -102,11 +105,11 @@ fun WeatherCard(w: Weather, celsius: Boolean, modifier: Modifier) {
 }
 
 @Composable
-private fun Weather3Card(w: Weather, celsius: Boolean, width: Dp) {
+private fun Weather3Card(w: Weather, celsius: Boolean, width: Dp, place: String) {
   val days = w.days.ifEmpty { listOf(Day("Today", w.code, w.hiF, w.loF)) }.take(4)
   val lo = days.minOf { it.loF }; val hi = days.maxOf { it.hiF }; val span = (hi - lo).coerceAtLeast(1.0)
   Column(Modifier.width(width).frosted(CardShape).padding(horizontal = 18.dp, vertical = 14.dp)) {
-    CardTitle("FORECAST · ${WeatherApi.PLACE.uppercase()}")
+    CardTitle("FORECAST · ${place.uppercase()}")
     days.forEach { d ->
       Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         T(d.label, 12.5.sp, Modifier.width(48.dp), weight = FontWeight.SemiBold, shadow = TextShadow)

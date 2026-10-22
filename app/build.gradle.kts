@@ -9,14 +9,6 @@ android {
   compileSdk = 34
   defaultConfig {
     applicationId = "com.peyton.tvlauncher"; minSdk = 26; targetSdk = 34; versionCode = (findProperty("vc") as String?)?.toInt() ?: 8; versionName = (findProperty("vn") as String?) ?: "4.3"
-    // Weather location (Open-Meteo, no key). The repo default is a neutral public city; the real home location is
-    // supplied outside git via tvlauncher.weather.* Gradle props (~/.gradle/gradle.properties) or TVL_WEATHER_* env vars.
-    // See RELEASING.md.
-    fun q(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-    buildConfigField("String", "WEATHER_PLACE", q(signingValue("tvlauncher.weather.place", "TVL_WEATHER_PLACE", "New York, NY")))
-    buildConfigField("String", "WEATHER_LAT", q(signingValue("tvlauncher.weather.lat", "TVL_WEATHER_LAT", "40.7128")))
-    buildConfigField("String", "WEATHER_LON", q(signingValue("tvlauncher.weather.lon", "TVL_WEATHER_LON", "-74.0060")))
-    buildConfigField("String", "WEATHER_TZ", q(signingValue("tvlauncher.weather.tz", "TVL_WEATHER_TZ", "America/New_York")))
   }
   signingConfigs {
     // Every release MUST be signed with the same key as v1..v4.2 (cert SHA-256 65f0d4cb...4a4d113f), or the

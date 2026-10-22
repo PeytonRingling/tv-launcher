@@ -5,7 +5,7 @@ updates and Chromecast keep working underneath. Uninstall it (or run `scripts/re
 is exactly as before. Everything is driven by the remote's D-pad.
 
 ## What's in it
-- **Home**: big clock + date, live weather (Open-Meteo, no account/key; location set at build time, see [RELEASING.md](RELEASING.md)), a **Favorites** row and an
+- **Home**: big clock + date, live weather (Open-Meteo, no account/key; location from a ZIP code entered in Settings › Weather location), a **Favorites** row and an
   **All apps** grid with each app's TV banner (or icon). Frosted-glass background made from your ambient photos.
   Smooth scale-and-glow focus animation. No ads, no "recommended for you" rows.
 - **Hold OK** (or press the Menu button) on any app → Open · Add/Remove Favorite · **Move** (◀ ▶ to reorder, OK to finish)

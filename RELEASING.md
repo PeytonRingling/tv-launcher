@@ -47,21 +47,15 @@ The keystore is **not** in this repo (`*.keystore`, `*.jks`, `*.p12` are git-ign
 | `tvlauncher.keyAlias` | `TVL_KEY_ALIAS` | `androiddebugkey` |
 | `tvlauncher.keyPassword` | `TVL_KEY_PASSWORD` | `android` |
 
-On the original build box nothing needs to be set for signing (the weather location comes from `~/.gradle/gradle.properties`, see below).
+On the original build box nothing needs to be set for signing.
 
-## Weather location (kept out of the repo)
-The home-screen weather location is a build-time setting, resolved like the signing values (Gradle property → env var → default):
-
-| Gradle property | Env var | Repo default |
-|---|---|---|
-| `tvlauncher.weather.place` | `TVL_WEATHER_PLACE` | `New York, NY` (label shown on the TV) |
-| `tvlauncher.weather.lat` | `TVL_WEATHER_LAT` | `40.7128` |
-| `tvlauncher.weather.lon` | `TVL_WEATHER_LON` | `-74.0060` |
-| `tvlauncher.weather.tz` | `TVL_WEATHER_TZ` | `America/New_York` (IANA zone for the forecast hours) |
-
-The real home location lives in `~/.gradle/gradle.properties` on the original build box, not in git. On any other machine or
-cloud agent, set the four `TVL_WEATHER_*` values (as secrets/env) before building a release, or the TV will show the neutral
-default city's weather.
+## Weather location (entered on the TV, never compiled in)
+Since v4.3 the location comes from a US ZIP code entered on the TV (Settings › Display › Weather location), resolved once via
+Zippopotam.us (no key) and stored in the launcher's prefs; Open-Meteo picks the timezone (`timezone=auto`). There is no
+build-time location any more: no `BuildConfig.WEATHER_*`, no `tvlauncher.weather.*` / `TVL_WEATHER_*` settings. A fresh install
+or an update from v4.2 shows "Set your ZIP code…" on the weather cards until a ZIP is entered.
+`tools/release.sh` fails if the APK contains any legacy location value (it greps the unpacked APK for the old
+`tvlauncher.weather.*` values if a machine still has them, and for `WEATHER_*` BuildConfig fields).
 
 ## Building on another machine / a cloud agent (documented only, not set up)
 Provide the *same* keystore as a secret, then decode it at build time. Never commit it.
@@ -105,9 +99,7 @@ tools/release.sh 8 4.3 --publish    # same, then `gh release create v4.3 release
 ```
 `--publish` also requires HEAD == origin/main (merge first, so the tag points at the shipped code).
 
-**Location caveat:** the weather location is compiled into the APK. If `tvlauncher.weather.*` / `TVL_WEATHER_*` are set, the
-release asset (public) contains the home location. `release.sh --publish` refuses that unless `TVL_ALLOW_LOCATION_IN_APK=1`.
-Either build releases without those props (TV shows the default city) or move the location to an on-TV setting first.
+**Location check:** releases are location-free (see "Weather location" above); `release.sh` verifies that on the built APK.
 
 On the TV: **Settings → System → Update launcher → Install x.y from GitHub** (or "Check GitHub for updates"). Android shows
 its install prompt; the first time it also asks to allow "Install unknown apps" for TV Launcher. The launcher also checks

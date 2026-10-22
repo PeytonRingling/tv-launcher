@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity(), Actions {
           st.inputsOpen -> st.inputsOpen = false
           st.allApps -> st.allApps = false
           st.moving != null -> st.moving = null
-          st.screen in setOf(Screen.LAYOUT, Screen.CARDS, Screen.CLOCK, Screen.PHONE_UPLOAD, Screen.MY_PHOTOS, Screen.UPDATE) -> st.screen = Screen.SETTINGS
+          st.screen in setOf(Screen.LAYOUT, Screen.CARDS, Screen.CLOCK, Screen.PHONE_UPLOAD, Screen.MY_PHOTOS, Screen.UPDATE, Screen.WEATHER_ZIP) -> st.screen = Screen.SETTINGS
           st.screen != Screen.HOME -> st.screen = Screen.HOME
           else -> st.homeTick++ // a launcher never "exits"; BACK just returns to the top
         }
@@ -96,10 +96,13 @@ class MainActivity : ComponentActivity(), Actions {
     // Weather: refresh every 30 min while visible.
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        while (true) {
-          val stale = st.weather?.let { System.currentTimeMillis() - it.fetchedAt > 25 * 60_000 } ?: true
-          if (stale) withContext(Dispatchers.IO) { WeatherApi.fetchJson() }?.let { st.setWeatherJson(it) }
-          delay(30 * 60_000L)
+        // Restarts immediately when the ZIP changes; nothing to fetch until one is set.
+        androidx.compose.runtime.snapshotFlow { st.place }.collectLatest { p ->
+          while (p != null) {
+            val stale = st.weather?.let { System.currentTimeMillis() - it.fetchedAt > 25 * 60_000 } ?: true
+            if (stale) withContext(Dispatchers.IO) { WeatherApi.fetchJson(p) }?.let { if (st.place == p) st.setWeatherJson(it) }
+            delay(30 * 60_000L)
+          }
         }
       }
     }
@@ -440,6 +443,20 @@ class MainActivity : ComponentActivity(), Actions {
         message = "Version $v is ready. Allow installs for TV Launcher on the TV, then press Install.") }
     }
     return null
+  }
+
+  // ------------------------------------------------------------ weather location (ZIP entered on the TV)
+
+  private var zipJob: Job? = null
+  override fun setZip(zip: String) {
+    if (zipJob?.isActive == true) return
+    st.zipStatus = "…"
+    zipJob = lifecycleScope.launch {
+      when (val r = withContext(Dispatchers.IO) { ZipLookup.lookup(zip) }) {
+        is ZipResult.Found -> { st.changePlace(r.place); st.zipStatus = null; st.screen = Screen.SETTINGS }
+        is ZipResult.Failed -> st.zipStatus = r.reason   // the old location stays as it was
+      }
+    }
   }
 
   // ------------------------------------------------------------ self-update from GitHub Releases

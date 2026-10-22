@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,6 +60,8 @@ interface Actions : AmbientSource {
   fun installPending()
   /** GitHub Releases updater: manual check, then download + verify + PackageInstaller. Defaults keep test fakes short. */
   fun checkGitHub() {}
+  /** Looks up the ZIP and, if it resolves, saves it as the weather location. */
+  fun setZip(zip: String) {}
   fun installFromGitHub() {}
   fun deletePhoto(p: Photo)
   fun deleteAllPhotos()
@@ -77,11 +81,12 @@ fun LauncherRoot(st: LauncherState, actions: Actions) {
       Screen.LAYOUT -> LayoutSettings(st, actions)
       Screen.CARDS -> CardSettings(st, actions)
       Screen.CLOCK -> ClockSettings(st, actions)
+      Screen.WEATHER_ZIP -> ZipScreen(st, actions)
     }
     val a by animateFloatAsState(if (st.ambient) 1f else 0f, tween(if (st.ambient) 1600 else 350), label = "amb")
     if (st.ambient || a > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha; alpha = a }) {
       AmbientScreen(remember(st.ambientSource, st.myPhotos, st.wallpapers) { Photos.forAmbient(st.ambientSource, st.myPhotos, st.wallpapers) }, actions,
-        if (st.showWeather) st.weather else null, st.use24h, st.celsius, st.clock.takeIf { it.inAmbient }, st.autoEnhance)
+        if (st.showWeather) st.weather else null, st.use24h, st.celsius, st.clock.takeIf { it.inAmbient }, st.autoEnhance, st.place?.label ?: "")
     }
   }
 }
@@ -112,7 +117,7 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
         Spacer(Modifier.height(28.dp))
         T("Send ambient photos from your phone with \"Add photos from phone\". They're stored privately in the launcher; it never reads the TV's file storage.", 13.sp, color = Ink.copy(alpha = 0.62f), maxLines = 6)
         Spacer(Modifier.height(14.dp))
-        T("Weather for ${WeatherApi.PLACE} by Open-Meteo.", 13.sp, color = Ink.copy(alpha = 0.62f), maxLines = 2)
+        T(st.place?.let { "Weather for ${it.label} by Open-Meteo." } ?: "Set your ZIP code under Display › Weather location for the forecast.", 13.sp, color = Ink.copy(alpha = 0.62f), maxLines = 2)
         Spacer(Modifier.height(14.dp))
         T("Press BACK to return home.", 13.sp, color = Ink.copy(alpha = 0.62f))
       }
@@ -140,6 +145,7 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
         fun cycleWp(d: Int) { if (wp.isEmpty()) return; val n = wp.size + 1; st.changeWallpaper(((st.wallpaperChoice + 1 + d + n) % n) - 1); actions.wallpaperChanged() }
         SettingRow("Wallpaper", if (st.wallpaperChoice !in wp.indices) "Rotate daily" else Photos.nameOf(wp[st.wallpaperChoice]), { cycleWp(1) }, { cycleWp(-1) }, { cycleWp(1) })
         Section("Display")
+        SettingRow("Weather location", st.place?.fullLabel ?: "Set ZIP code", { st.zipStatus = null; st.screen = Screen.WEATHER_ZIP })
         SettingRow("Clock", if (st.use24h) "24-hour" else "12-hour", { st.set24h(!st.use24h) }, { st.set24h(!st.use24h) }, { st.set24h(!st.use24h) })
         SettingRow("Weather in ambient", if (st.showWeather) "On" else "Off", { st.changeShowWeather(!st.showWeather) }, { st.changeShowWeather(!st.showWeather) }, { st.changeShowWeather(!st.showWeather) })
         SettingRow("Temperature", if (st.celsius) "°C" else "°F", { st.changeCelsius(!st.celsius) }, { st.changeCelsius(!st.celsius) }, { st.changeCelsius(!st.celsius) })
@@ -410,4 +416,75 @@ private fun GitHubRow(st: LauncherState, actions: Actions, fr: FocusRequester?) 
   }
   T(g.message.ifEmpty { "Updates come from the public GitHub releases; only builds signed with this launcher's key are accepted." },
     13.sp, Modifier.padding(start = 20.dp, top = 6.dp).height(36.dp), color = color, maxLines = 2)
+}
+
+// ================================================================= WEATHER LOCATION (ZIP)
+
+/** 5-digit picker for the remote: ▲▼ change the digit, ◀▶ move, number keys type, OK saves. BACK cancels. */
+@Composable
+fun ZipScreen(st: LauncherState, actions: Actions) {
+  val entry = remember { ZipEntry(st.place?.zip) }
+  var tick by remember { mutableIntStateOf(0) }   // ZipEntry is plain state; bump to redraw
+  val fr = remember { FocusRequester() }
+  LaunchedEffect(Unit) { delay(50); tryFocus(fr) }
+  val busy = st.zipStatus == "…"
+  val err = st.zipStatus?.takeIf { !busy }
+  Box(Modifier.fillMaxSize()) {
+    Backdrop(st.backdrop)
+    Column(Modifier.fillMaxSize().padding(horizontal = 72.dp, vertical = 48.dp)) {
+      T("Weather location", 34.sp, weight = FontWeight.Light, spacing = (-0.5).sp)
+      Spacer(Modifier.height(6.dp))
+      T("Now: " + (st.place?.fullLabel ?: "not set"), 15.sp, color = Ink.copy(alpha = 0.75f))
+      Spacer(Modifier.height(40.dp))
+      Row(
+        Modifier.focusRequester(fr).focusable()
+          .onPreviewKeyEvent { e ->
+            val n = e.nativeKeyEvent
+            if (n.keyCode == android.view.KeyEvent.KEYCODE_BACK) return@onPreviewKeyEvent false
+            if (n.action != android.view.KeyEvent.ACTION_DOWN) return@onPreviewKeyEvent n.keyCode != android.view.KeyEvent.KEYCODE_BACK
+            when (entry.key(n.keyCode)) {
+              ZipEntry.Result.CHANGED -> { tick++; if (err != null) st.zipStatus = null; true }
+              ZipEntry.Result.SUBMIT -> { if (!busy) actions.setZip(entry.zip); true }
+              ZipEntry.Result.NONE -> n.keyCode in setOf(android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT)
+            }
+          },
+        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
+      ) {
+        @Suppress("UNUSED_EXPRESSION") tick
+        for (i in 0 until 5) ZipDigit(entry.digits[i], selected = i == entry.pos)
+      }
+      Spacer(Modifier.height(26.dp))
+      T(when {
+        busy -> "Looking up ${entry.zip}…"
+        err != null -> err
+        else -> "▲ ▼ change a digit  ·  ◀ ▶ move  ·  number keys type  ·  OK saves  ·  BACK cancels"
+      }, 15.sp, color = if (err != null) Color(0xFFFFB4A8) else Ink.copy(alpha = 0.72f), weight = FontWeight.Medium, maxLines = 2)
+      Spacer(Modifier.height(10.dp))
+      T("US ZIP codes only. The ZIP is looked up once (Zippopotam.us) and stored only on this TV; the forecast is from Open-Meteo.",
+        12.5.sp, color = Ink.copy(alpha = 0.55f), maxLines = 2)
+    }
+  }
+}
+
+@Composable
+private fun ZipDigit(d: Int, selected: Boolean) {
+  val k by animateFloatAsState(if (selected) 1f else 0f, tween(160), label = "zd")
+  Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    T("▲", 14.sp, Modifier.graphicsLayer { alpha = k }, color = Ink.copy(alpha = 0.8f))
+    Box(
+      Modifier.padding(vertical = 6.dp).size(84.dp, 108.dp)
+        .graphicsLayer { scaleX = 1f + 0.06f * k; scaleY = 1f + 0.06f * k }
+        .clip(RoundedCornerShape(20.dp)).background(lerpColor(Color(0x1FFFFFFF), Color(0xF2FFFFFF), k)),
+      Alignment.Center,
+    ) {
+      androidx.compose.animation.AnimatedContent(d, transitionSpec = {
+        val up = targetState == (initialState + 1) % 10
+        (androidx.compose.animation.slideInVertically(tween(150)) { h -> if (up) h / 3 else -h / 3 } + androidx.compose.animation.fadeIn(tween(150))) togetherWith
+          (androidx.compose.animation.slideOutVertically(tween(150)) { h -> if (up) -h / 3 else h / 3 } + androidx.compose.animation.fadeOut(tween(110)))
+      }, label = "digit") { v ->
+        T("$v", 56.sp, weight = FontWeight.Light, color = lerpColor(Ink, Color(0xFF0B0D14), k))
+      }
+    }
+    T("▼", 14.sp, Modifier.graphicsLayer { alpha = k }, color = Ink.copy(alpha = 0.8f))
+  }
 }

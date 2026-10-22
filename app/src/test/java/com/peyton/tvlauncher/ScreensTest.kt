@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.graphics.asAndroidBitmap
 import com.github.takahirom.roborazzi.captureRoboImage
 import androidx.compose.foundation.background
@@ -108,6 +109,7 @@ class ScreensTest {
     st.weather = Weather(48.0, 2, 61.0, 34.0, true, System.currentTimeMillis(), listOf(
       Hour("6 PM", 46.0, 2, true), Hour("7 PM", 43.0, 0, false), Hour("8 PM", 41.0, 0, false), Hour("9 PM", 39.0, 3, false), Hour("10 PM", 37.0, 3, false)))
     st.inputs = listOf(InputUi("H1", "PlayStation 5", "HDMI 1 · eARC") {}, InputUi("H2", "Apple TV 4K", "HDMI 2") {}, InputUi("TV", "Live TV", "Antenna & channels") {})
+    st.place = WeatherPlace("10001", "New York City", "NY", 40.7484, -73.9967)
     st.wallpapers = Photos.builtins(ctx)
     st.photos = st.wallpapers
     val full = Photos.decode(ctx, Photo(asset = "wallpapers/$wall.jpg"), 1920)!!
@@ -448,6 +450,25 @@ class ScreensTest {
     it.versionLabel = "4.2 (build 7)"; it.canInstall = true; it.gh = GhUi(GhPhase.DOWNLOADING, "Downloading version 4.3…", ghRel)
     it.update = UpdateUi("http://192.168.1.42:8766/731402", "731402", UpdatePhase.RECEIVING, "Downloading 4.3… 48%", 0.48f); it.screen = Screen.UPDATE
   }
+
+  // ======================= Weather location (ZIP) =======================
+  private val zipPlace = WeatherPlace("10001", "New York City", "NY", 40.7484, -73.9967)
+  @Test fun zipPicker() = shot("../updater/Z1_zip_picker", state()) { it.place = zipPlace; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPickerUnset() = shot("../updater/Z2_zip_picker_first_time", state()) { it.place = null; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPickerError() = shot("../updater/Z3_zip_error_unknown", state()) { it.place = zipPlace; it.zipStatus = "99999 isn't a known US ZIP code."; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPickerBusy() = shot("../updater/Z4_zip_looking_up", state()) { it.place = zipPlace; it.zipStatus = "…"; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPrompt() = shot("../updater/Z5_home_weather_prompt", state()) { it.place = null; it.weather = null }
+  @Test fun zipSettingsRow() {
+    val st = state(); st.place = zipPlace
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    st.screen = Screen.SETTINGS
+    rule.mainClock.advanceTimeBy(1500); Thread.sleep(300)
+    rule.onAllNodesWithText("Weather location")[0].performScrollTo()
+    rule.mainClock.advanceTimeBy(1500)
+    rule.onRoot().captureRoboImage("../screens/updater/Z6_settings_weather_location.png")
+  }
+  @Test fun zipCardWithPlace() = shot("../updater/Z7_home_weather_card", state()) { it.place = zipPlace }
 }
 
 private fun Modifier.androidx_bg() = this.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF1A2236), androidx.compose.ui.graphics.Color(0xFF0B0D14))))

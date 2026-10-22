@@ -153,6 +153,11 @@ class Prefs(ctx: Context) {
   var lastVersionCode: Long
     get() = sp.getLong("lastVersionCode", 0L)
     set(v) = sp.edit().putLong("lastVersionCode", v).apply()
+  /** Weather location from the ZIP entered in Settings (null until set). Stored as zip|city|state|lat|lon. */
+  var weatherPlace: WeatherPlace?
+    get() = sp.getString("weatherPlace", null)?.split('|')?.takeIf { it.size == 5 }?.let { f ->
+      runCatching { WeatherPlace(f[0], f[1], f[2], f[3].toDouble(), f[4].toDouble()) }.getOrNull() }
+    set(v) = sp.edit().putString("weatherPlace", v?.let { "${it.zip}|${it.city.replace("|", " ")}|${it.state.replace("|", " ")}|${it.lat}|${it.lon}" }).apply()
   var weatherJson: String?
     get() = sp.getString("weatherJson", null)
     set(v) = sp.edit().putString("weatherJson", v).apply()
@@ -167,14 +172,13 @@ data class Weather(val tempF: Double, val code: Int, val hiF: Double, val loF: D
 enum class Sky { SUN, PARTLY, CLOUD, FOG, RAIN, SNOW, STORM }
 
 object WeatherApi {
-  /** Location comes from BuildConfig (tvlauncher.weather.* / TVL_WEATHER_*), never hardcoded in the repo. */
-  val PLACE: String = BuildConfig.WEATHER_PLACE
-  private val URL_STR = "https://api.open-meteo.com/v1/forecast?latitude=${BuildConfig.WEATHER_LAT}&longitude=${BuildConfig.WEATHER_LON}" +
+  /** Open-Meteo (no key). The location comes from the ZIP entered on the TV; timezone=auto picks the local zone. */
+  fun url(p: WeatherPlace) = "https://api.open-meteo.com/v1/forecast?latitude=${p.lat}&longitude=${p.lon}" +
     "&current=temperature_2m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min" +
-    "&hourly=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit&timezone=${java.net.URLEncoder.encode(BuildConfig.WEATHER_TZ, "UTF-8")}&forecast_days=4"
+    "&hourly=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit&timezone=auto&forecast_days=4"
 
-  fun fetchJson(): String? = try {
-    val c = URL(URL_STR).openConnection() as HttpURLConnection
+  fun fetchJson(p: WeatherPlace?): String? = if (p == null) null else try {
+    val c = URL(url(p)).openConnection() as HttpURLConnection
     c.connectTimeout = 8000; c.readTimeout = 8000
     c.setRequestProperty("User-Agent", "TvLauncher/1.0")
     try { if (c.responseCode == 200) c.inputStream.bufferedReader().readText() else null } finally { c.disconnect() }
@@ -313,7 +317,7 @@ object Photos {
 
 // ---------------------------------------------------------------- UI state
 
-enum class Screen { HOME, SETTINGS, PHONE_UPLOAD, MY_PHOTOS, UPDATE, LAYOUT, CARDS, CLOCK }
+enum class Screen { HOME, SETTINGS, PHONE_UPLOAD, MY_PHOTOS, UPDATE, LAYOUT, CARDS, CLOCK, WEATHER_ZIP }
 
 /** Live info for the "Add photos from phone" screen. */
 data class UploadUi(val url: String?, val pin: String, val received: Int = 0, val error: String? = null,
@@ -332,7 +336,10 @@ class LauncherState(private val prefs: Prefs) {
   var hidden by mutableStateOf(prefs.hidden)
   var screen by mutableStateOf(Screen.HOME)
   var ambient by mutableStateOf(false)
-  var weather by mutableStateOf(WeatherApi.parse(prefs.weatherJson))
+  var place by mutableStateOf(prefs.weatherPlace)
+  var weather by mutableStateOf(if (prefs.weatherPlace != null) WeatherApi.parse(prefs.weatherJson) else null)
+  /** ZIP picker status: null = idle, "…" while looking up, otherwise an error to show (the old place is kept). */
+  var zipStatus by mutableStateOf<String?>(null)
   var photos by mutableStateOf(listOf<Photo>())
   var myPhotos by mutableStateOf(listOf<Photo>())
   var ambientSource by mutableIntStateOf(prefs.ambientSource)
@@ -414,6 +421,8 @@ class LauncherState(private val prefs: Prefs) {
   fun changeCelsius(v: Boolean) { celsius = v; prefs.celsius = v }
   fun changeShowWeather(v: Boolean) { showWeather = v; prefs.showWeather = v }
   fun setWeatherJson(json: String) { WeatherApi.parse(json)?.let { weather = it; prefs.weatherJson = json } }
+  /** New location: persist it and drop the old forecast so the cards never show one place's weather under another's name. */
+  fun changePlace(p: WeatherPlace) { prefs.weatherPlace = p; prefs.weatherJson = null; place = p; weather = null }
 }
 
 /** A TV input for the Inputs card. */

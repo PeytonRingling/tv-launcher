@@ -86,7 +86,7 @@ private fun prepare(src: AmbientSource, spec: SlideSpec, id: Int, screenW: Int, 
 fun pairPanel(w: Int, h: Int): Pair<Float, Float> { val m = h * 0.034f; val gap = w * 0.024f; return ((w - 2 * m - gap) / 2) to (h - 2 * m) }
 
 @Composable
-fun AmbientScreen(photos: List<Photo>, src: AmbientSource, weather: Weather?, use24h: Boolean, celsius: Boolean, clock: ClockLook? = null, enhance: Boolean = false) {
+fun AmbientScreen(photos: List<Photo>, src: AmbientSource, weather: Weather?, use24h: Boolean, celsius: Boolean, clock: ClockLook? = null, enhance: Boolean = false, place: String = "") {
   var slides by remember { mutableStateOf(listOf<Shown>()) }
   BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
     val sw = constraints.maxWidth; val sh = constraints.maxHeight
@@ -105,7 +105,7 @@ fun AmbientScreen(photos: List<Photo>, src: AmbientSource, weather: Weather?, us
       }
     }
     slides.forEach { s -> key(s.id) { SlideView(s) } }
-    AmbientOverlay(weather, use24h, celsius, clock)
+    AmbientOverlay(weather, use24h, celsius, clock, place)
   }
 }
 
@@ -169,7 +169,7 @@ private fun DrawScope.drawCrop(img: ImageBitmap, c: NRect, at: Offset, sz: Size,
 }
 
 @Composable
-private fun AmbientOverlay(weather: Weather?, use24h: Boolean, celsius: Boolean, clock: ClockLook?) {
+private fun AmbientOverlay(weather: Weather?, use24h: Boolean, celsius: Boolean, clock: ClockLook?, place: String) {
   val now = rememberNow()
   val minute = now / 60_000          // burn-in protection: nudge a few dp every minute
   val nudgeX = ((minute * 37) % 17 - 8).toInt().dp
@@ -194,7 +194,7 @@ private fun AmbientOverlay(weather: Weather?, use24h: Boolean, celsius: Boolean,
         Spacer(Modifier.width(14.dp))
         Column {
           T(WeatherApi.fmt(weather.tempF, celsius), 46.sp, weight = FontWeight.ExtraLight)
-          T("${WeatherApi.describe(weather.code)}  ·  ${WeatherApi.PLACE}", 15.sp, color = Ink.copy(alpha = 0.75f))
+          T(if (place.isEmpty()) WeatherApi.describe(weather.code) else "${WeatherApi.describe(weather.code)}  ·  $place", 15.sp, color = Ink.copy(alpha = 0.75f))
         }
       }
     }

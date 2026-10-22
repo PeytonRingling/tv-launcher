@@ -34,15 +34,19 @@ if [[ -n "$latest" && "$VC" -le "$latest" ]]; then echo "FAIL: versionCode $VC i
 
 CMD=(gh release create "$TAG" "$OUT" --repo "$REPO" --target main --title "TV Launcher $VN" --notes "TV Launcher $VN (build $VC). Install from the TV: Settings › System › Update launcher › Install from GitHub.")
 echo "OK: $OUT"
-# The weather location is baked into the APK (BuildConfig). A public release asset would publish it.
-if grep -qs '^tvlauncher\.weather\.' ~/.gradle/gradle.properties || env | grep -q '^TVL_WEATHER_'; then
-  echo "WARNING: this APK contains the private weather location (tvlauncher.weather.* / TVL_WEATHER_*); anyone can download a public release." >&2
-  PRIVATE_LOCATION=1
-fi
+# Location guard: the weather location is entered on the TV (ZIP), never compiled in. Fail if any old build-time location
+# value (legacy tvlauncher.weather.* in ~/.gradle/gradle.properties, TVL_WEATHER_* env) or a WEATHER_* BuildConfig field
+# shows up anywhere in the APK.
+needles=("WEATHER_PLACE" "WEATHER_LAT" "WEATHER_LON" "WEATHER_TZ")
+while IFS='=' read -r k v; do [[ -n "$v" ]] && needles+=("$v"); done < <(grep -hs '^tvlauncher\.weather\.' ~/.gradle/gradle.properties; env | grep '^TVL_WEATHER_' || true)
+tmp=$(mktemp -d); unzip -qo "$OUT" -d "$tmp"
+for n in "${needles[@]}"; do
+  [[ "$n" == America/* ]] && continue   # IANA zone names appear in the platform/ICU data of any app; not a location leak
+  if grep -rqaF -- "$n" "$tmp"; then rm -rf "$tmp"; echo "FAIL: APK contains a compiled-in location value (${n:0:3}…)" >&2; exit 1; fi
+done
+rm -rf "$tmp"; echo "location check: no compiled-in location (${#needles[@]} values checked)"
+
 if [[ "$PUBLISH" == "--publish" ]]; then
-  if [[ -n "${PRIVATE_LOCATION:-}" && "${TVL_ALLOW_LOCATION_IN_APK:-}" != 1 ]]; then
-    echo "FAIL: refusing to publish a location-bearing APK. Build without the weather props, or set TVL_ALLOW_LOCATION_IN_APK=1 if Peyton OKs it." >&2; exit 1
-  fi
   [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || { echo "FAIL: HEAD isn't origin/main; merge and pull first" >&2; exit 1; }
   "${CMD[@]}"
 else
