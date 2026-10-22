@@ -1,0 +1,69 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;font-family:'Manrope',sans-serif;color:#fff;-webkit-font-smoothing:antialiased;background:#000}
+.wall{position:absolute;inset:0;background:url(img/h1016.jpg) center 60%/cover}
+.tint{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%,rgba(10,12,20,.05),rgba(10,12,20,.45) 75%),linear-gradient(180deg,rgba(8,10,18,.35),rgba(8,10,18,0) 40%,rgba(8,10,18,.45))}
+.glass{background:rgba(255,255,255,.12);backdrop-filter:blur(36px) saturate(1.5);-webkit-backdrop-filter:blur(36px) saturate(1.5);border:1px solid rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 20px 60px rgba(0,0,0,.25)}
+.clock{position:absolute;top:120px;left:0;right:0;text-align:center}
+.clock .t{font-family:'Inter';font-weight:200;font-size:250px;letter-spacing:-.05em;line-height:1;text-shadow:0 8px 40px rgba(0,0,0,.25)}
+.clock .d{margin-top:18px;font-size:30px;font-weight:500;letter-spacing:.02em;color:rgba(255,255,255,.9)}
+.w{position:absolute;top:96px;left:96px;width:360px;padding:28px 30px;border-radius:34px}
+.w .loc{font-size:18px;font-weight:600;color:rgba(255,255,255,.75);display:flex;align-items:center;gap:8px}
+.w .big{display:flex;align-items:center;gap:16px;margin-top:8px}
+.w .tmp{font-family:'Inter';font-weight:200;font-size:84px;letter-spacing:-.04em;line-height:1}
+.w .cond{font-size:18px;font-weight:600;line-height:1.45}
+.w .cond small{display:block;font-weight:500;color:rgba(255,255,255,.7);font-size:16px}
+.hrs{display:flex;justify-content:space-between;margin-top:20px;padding-top:18px;border-top:1px solid rgba(255,255,255,.18)}
+.hrs div{text-align:center;font-size:15px;font-weight:600;color:rgba(255,255,255,.75)}
+.hrs div b{display:block;font-size:19px;color:#fff;margin-top:6px}
+.hrs svg{width:24px;height:24px;margin-top:6px}
+.n{position:absolute;top:96px;right:96px;width:360px;padding:26px 28px;border-radius:34px}
+.n h4{font-size:16px;font-weight:700;letter-spacing:.14em;color:rgba(255,255,255,.7)}
+.inp{display:flex;align-items:center;gap:16px;margin-top:18px}
+.inp i{width:46px;height:46px;border-radius:14px;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:14px;font-weight:800}
+.inp .x{font-size:19px;font-weight:600}.inp .x small{display:block;font-size:15px;font-weight:500;color:rgba(255,255,255,.65)}
+.live{margin-left:auto;width:10px;height:10px;border-radius:50%;background:#5BE38B;box-shadow:0 0 12px #5BE38B}
+.dockwrap{position:absolute;left:0;right:0;bottom:92px;display:flex;justify-content:center}
+.dock{display:flex;align-items:flex-end;gap:26px;padding:22px 30px;border-radius:52px;-webkit-box-reflect:below 14px linear-gradient(transparent 62%,rgba(255,255,255,.16))}
+.ic{width:112px;height:112px;border-radius:30px;display:flex;align-items:center;justify-content:center;position:relative;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 20px rgba(0,0,0,.25)}
+.ic:before{content:"";position:absolute;inset:0;border-radius:30px;background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0) 50%)}
+.ic svg{width:52px;height:52px;position:relative}
+.ic.f{width:150px;height:150px;border-radius:40px;margin:0 6px;transform:translateY(-26px);box-shadow:0 0 0 4px rgba(255,255,255,.95),0 24px 60px rgba(0,0,0,.45),0 0 70px rgba(255,120,90,.55)}
+.ic.f:before{border-radius:40px}
+.ic.f svg{width:70px;height:70px}
+.lab{position:absolute;top:-66px;left:50%;transform:translateX(-50%);white-space:nowrap;padding:9px 20px;border-radius:999px;font-size:19px;font-weight:700;background:rgba(255,255,255,.92);color:#111}
+.sepv{width:2px;height:84px;align-self:center;background:rgba(255,255,255,.25);border-radius:2px}
+.foot{position:absolute;bottom:34px;left:0;right:0;text-align:center;font-size:15px;font-weight:600;color:rgba(255,255,255,.55);letter-spacing:.06em}
+</style></head><body>
+<div class="wall"></div><div class="tint"></div>
+<div class="w glass">
+ <div class="loc"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z" fill="#fff"/></svg>New York, NY</div>
+ <div class="big"><div class="tmp">48°</div><div class="cond">Partly cloudy<small>H 61°  ·  L 34°</small></div></div>
+ <div class="hrs">
+  <div>6 PM<br><svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="4" fill="#FFD27A"/><path d="M8 19h9a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.6A3.3 3.3 0 0 0 8 19z" fill="#fff"/></svg><b>46°</b></div>
+  <div>7 PM<br><svg viewBox="0 0 24 24"><path d="M15 3a8 8 0 1 0 6 13A7 7 0 0 1 15 3z" fill="#E6E4FF"/></svg><b>43°</b></div>
+  <div>8 PM<br><svg viewBox="0 0 24 24"><path d="M15 3a8 8 0 1 0 6 13A7 7 0 0 1 15 3z" fill="#E6E4FF"/></svg><b>41°</b></div>
+  <div>9 PM<br><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.6A3.3 3.3 0 0 0 7 18z" fill="#fff"/></svg><b>39°</b></div>
+  <div>10 PM<br><svg viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.6A3.3 3.3 0 0 0 7 18z" fill="#fff"/></svg><b>37°</b></div>
+ </div>
+</div>
+<div class="n glass">
+ <h4>INPUTS</h4>
+ <div class="inp"><i>H1</i><div class="x">PlayStation 5<small>HDMI 1 · eARC</small></div><span class="live"></span></div>
+ <div class="inp"><i>H2</i><div class="x">Apple TV 4K<small>HDMI 2</small></div></div>
+ <div class="inp"><i>TV</i><div class="x">Live TV<small>Antenna</small></div></div>
+</div>
+<div class="clock"><div class="t">5:52</div><div class="d">Sunday, October 18</div></div>
+<div class="dockwrap"><div class="dock glass">
+ <div class="ic" style="background:linear-gradient(145deg,#ff6a5b,#d3203f)"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z" fill="#fff"/></svg></div>
+ <div class="ic f" style="background:linear-gradient(145deg,#2b2b30,#0b0b0d)"><div class="lab">Netflix</div><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2.5" fill="none" stroke="#ff4b4b" stroke-width="2"/><path d="M8 20h8" stroke="#ff4b4b" stroke-width="2" stroke-linecap="round"/></svg></div>
+ <div class="ic" style="background:linear-gradient(145deg,#3a7bff,#1b2f9e)"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z" fill="#fff"/></svg></div>
+ <div class="ic" style="background:linear-gradient(145deg,#34e08f,#0f8f58)"><svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="3" fill="none" stroke="#fff" stroke-width="2"/><path d="M10 9.5v5l4.5-2.5z" fill="#fff"/></svg></div>
+ <div class="ic" style="background:linear-gradient(145deg,#2fc6ff,#0a6db8)"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="#fff" stroke-width="2"/><path d="M4 9h16M8 5v4M12 5v4M16 5v4" stroke="#fff" stroke-width="1.8"/></svg></div>
+ <div class="ic" style="background:linear-gradient(145deg,#b16cff,#5b23d6)"><svg viewBox="0 0 24 24"><path d="M10 17V6l9-2v11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><circle cx="7.5" cy="17" r="2.8" fill="#fff"/><circle cx="16.5" cy="15" r="2.8" fill="#fff"/></svg></div>
+ <div class="ic" style="background:linear-gradient(145deg,#ffb84d,#f0702a)"><svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="2.2" fill="#fff"/><circle cx="16" cy="8" r="2.2" fill="#fff"/><circle cx="5" cy="13" r="2" fill="#fff"/><circle cx="19" cy="13" r="2" fill="#fff"/><path d="M12 12c-3 0-5 3.5-5 5.5S9 20 12 19s5 1 5-1.5-2-5.5-5-5.5z" fill="#fff"/></svg></div>
+ <div class="sepv"></div>
+ <div class="ic" style="background:rgba(255,255,255,.18)"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="9" cy="7" r="2" fill="#fff"/><circle cx="15" cy="12" r="2" fill="#fff"/><circle cx="8" cy="17" r="2" fill="#fff"/></svg></div>
+</div></div>
+<div class="foot">HOLD OK TO EDIT DOCK</div>
+</body></html>

@@ -1,0 +1,58 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#000;font-family:'Inter',sans-serif;color:#fff;-webkit-font-smoothing:antialiased}
+.hero{position:absolute;inset:0;background:url(img/h1050.jpg) center/cover;transform:scale(1.03)}
+.shade{position:absolute;inset:0;background:
+ linear-gradient(90deg,rgba(0,0,0,.78) 0%,rgba(0,0,0,.45) 34%,rgba(0,0,0,0) 62%),
+ linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,0) 18%,rgba(0,0,0,0) 46%,rgba(0,0,0,.72) 74%,rgba(0,0,0,.94) 100%)}
+.top{position:absolute;top:56px;left:112px;right:112px;display:flex;align-items:center;justify-content:space-between}
+.brand{font-size:20px;font-weight:600;letter-spacing:.32em;color:rgba(255,255,255,.62)}
+.status{display:flex;align-items:center;gap:26px;font-size:22px;font-weight:400;color:rgba(255,255,255,.86)}
+.status .sep{width:1px;height:20px;background:rgba(255,255,255,.28)}
+.status svg{width:26px;height:26px;vertical-align:-5px;margin-right:8px}
+.copy{position:absolute;left:112px;top:196px;width:820px}
+.eyebrow{display:flex;align-items:center;gap:14px;font-size:18px;font-weight:600;letter-spacing:.24em;color:rgba(255,255,255,.72)}
+.eyebrow i{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#ff5f6d,#c81d4e);display:inline-flex;align-items:center;justify-content:center}
+.eyebrow i svg{width:14px;height:14px}
+h1{font-size:96px;line-height:1.0;font-weight:600;letter-spacing:-.035em;margin:26px 0 22px}
+.meta{font-size:24px;font-weight:400;color:rgba(255,255,255,.78);display:flex;align-items:center;gap:18px}
+.meta b{font-weight:500;color:#fff}
+.dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.5)}
+.prog{margin-top:26px;width:420px;height:5px;border-radius:3px;background:rgba(255,255,255,.22)}
+.prog div{width:62%;height:100%;border-radius:3px;background:#fff}
+.hint{margin-top:34px;display:flex;gap:14px}
+.pill{padding:14px 26px;border-radius:999px;font-size:20px;font-weight:600;background:rgba(255,255,255,.14);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.18)}
+.pill.on{background:#fff;color:#0b0b0d;border-color:#fff}
+.tabs{position:absolute;left:112px;bottom:330px;display:flex;gap:40px;font-size:20px;font-weight:500;color:rgba(255,255,255,.48)}
+.tabs .on{color:#fff}
+.tabs .on:after{content:"";display:block;height:3px;border-radius:2px;background:#fff;margin-top:10px;width:28px}
+.row{position:absolute;left:112px;bottom:96px;display:flex;gap:30px;align-items:flex-end}
+.t{width:300px;height:169px;border-radius:24px;position:relative;overflow:hidden;background-size:cover;background-position:center;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.t:after{content:"";position:absolute;inset:0;border-radius:24px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.62))}
+.t span{position:absolute;left:20px;bottom:16px;z-index:2;font-size:21px;font-weight:600;letter-spacing:-.01em}
+.wrap{position:relative}
+.wrap.f .t{transform:scale(1.14);transform-origin:center bottom;box-shadow:0 0 0 5px #fff,0 30px 70px rgba(0,0,0,.6),0 0 90px rgba(255,255,255,.18);margin:0 22px}
+.wrap.f .t:after{background:linear-gradient(160deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,0) 38%),linear-gradient(180deg,rgba(0,0,0,0) 50%,rgba(0,0,0,.55))}
+.fade{position:absolute;right:0;bottom:60px;width:260px;height:260px;background:linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.85))}
+</style></head><body>
+<div class="hero"></div><div class="shade"></div>
+<div class="top"><div class="brand">HOME</div>
+ <div class="status"><span><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="9" r="4" fill="#FFD27A"/><path d="M8 19h9a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.6A3.3 3.3 0 0 0 8 19z" fill="#fff"/></svg>48° New York</span><span class="sep"></span><span>5:52 PM</span></div></div>
+<div class="copy">
+ <div class="eyebrow"><i><svg viewBox="0 0 10 10"><path d="M2 1l7 4-7 4z" fill="#fff"/></svg></i>YOUTUBE · CONTINUE WATCHING</div>
+ <h1>Oregon Coast<br>in 8K</h1>
+ <div class="meta"><b>Nature Relaxation</b><span class="dot"></span>1 hr 12 min<span class="dot"></span>27 min left</div>
+ <div class="prog"><div></div></div>
+ <div class="hint"><div class="pill on">▶&nbsp; Resume</div><div class="pill">Open YouTube</div></div>
+</div>
+<div class="tabs"><div class="on">Favorites</div><div>All apps</div><div>Inputs</div><div>Ambient</div></div>
+<div class="row">
+ <div class="wrap f"><div class="t" style="background-image:url(img/t1050.jpg)"><span>YouTube</span></div></div>
+ <div class="wrap"><div class="t" style="background-image:url(img/t1067.jpg)"><span>Netflix</span></div></div>
+ <div class="wrap"><div class="t" style="background-image:url(img/t401.jpg)"><span>Disney+</span></div></div>
+ <div class="wrap"><div class="t" style="background-image:url(img/t1074.jpg)"><span>Hulu</span></div></div>
+ <div class="wrap"><div class="t" style="background-image:url(img/t352.jpg)"><span>Prime Video</span></div></div>
+ <div class="wrap"><div class="t" style="background-image:url(img/t1084.jpg)"><span>Tap Zoo</span></div></div>
+</div>
+<div class="fade"></div>
+</body></html>

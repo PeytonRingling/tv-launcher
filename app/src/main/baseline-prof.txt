@@ -1,0 +1,3 @@
+# Hand-written baseline profile: precompile the launcher's own code paths (home, dock, all-apps, glass, ambient).
+HSPLcom/peyton/tvlauncher/**->**(**)**
+Lcom/peyton/tvlauncher/**;

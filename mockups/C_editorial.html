@@ -1,0 +1,76 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#0C0C0E;color:#F3F1EC;font-family:'Inter Tight','Inter',sans-serif;-webkit-font-smoothing:antialiased}
+:root{--acc:#FF4A1C}
+.grain{position:absolute;inset:0;opacity:.07;background-image:radial-gradient(rgba(255,255,255,.9) 1px,transparent 1px);background-size:5px 5px}
+.glowbg{position:absolute;right:-200px;top:-260px;width:900px;height:900px;border-radius:50%;background:radial-gradient(circle,rgba(255,74,28,.22),rgba(255,74,28,0) 65%)}
+.mono{font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:.08em}
+.rail{position:absolute;left:0;top:0;bottom:0;width:132px;border-right:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;align-items:center;padding:52px 0 48px}
+.logo{width:22px;height:22px;border-radius:50%;background:var(--acc);box-shadow:0 0 24px rgba(255,74,28,.7)}
+.nav{margin:auto 0;display:flex;flex-direction:column;gap:26px}
+.nav div{width:64px;height:64px;border-radius:20px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.5)}
+.nav div.on{background:#F3F1EC;color:#0C0C0E}
+.nav svg{width:28px;height:28px}
+.rail .tm{font-size:17px;color:rgba(255,255,255,.6);writing-mode:vertical-rl;transform:rotate(180deg);letter-spacing:.2em}
+.main{position:absolute;left:204px;right:80px;top:0;bottom:0}
+.greet{position:absolute;top:70px;left:0;font-weight:800;font-size:150px;line-height:.9;letter-spacing:-.055em}
+.greet span{color:rgba(243,241,236,.36);font-weight:300;letter-spacing:-.05em}
+.greet em{font-style:normal;color:var(--acc)}
+.info{position:absolute;top:92px;right:0;width:360px;font-size:17px;line-height:1.9;color:rgba(255,255,255,.62)}
+.info b{color:#F3F1EC;font-weight:700}
+.info .temp{font-family:'Inter Tight';font-weight:200;font-size:96px;line-height:1;letter-spacing:-.05em;color:#F3F1EC;margin:6px 0 6px;text-transform:none}
+.info .temp sup{font-size:38px;vertical-align:44px;font-weight:300;margin-left:6px;letter-spacing:0}
+.label{position:absolute;top:410px;left:0;right:0;display:flex;align-items:center;gap:18px;font-size:16px;color:rgba(255,255,255,.55)}
+.label .ln{flex:1;height:1px;background:rgba(255,255,255,.12)}
+.label b{color:var(--acc);font-weight:700}
+.cards{position:absolute;top:462px;left:0;display:flex;gap:30px;align-items:flex-start}
+.c{position:relative;height:500px;border-radius:30px;overflow:hidden;background-size:cover;background-position:center;flex:none}
+.c .du{position:absolute;inset:0;mix-blend-mode:multiply}
+.c .sh{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.25) 0%,rgba(0,0,0,0) 30%,rgba(0,0,0,0) 50%,rgba(0,0,0,.78) 100%)}
+.c .idx{position:absolute;top:26px;left:28px;font-size:15px;color:rgba(255,255,255,.85)}
+.c .tag{position:absolute;top:22px;right:24px;font-size:13px;padding:7px 14px;border-radius:999px;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.3)}
+.c .nm{position:absolute;left:28px;right:28px;bottom:58px;font-weight:800;font-size:46px;letter-spacing:-.035em;line-height:.95}
+.c .sub{position:absolute;left:28px;right:28px;bottom:26px;font-size:14px;color:rgba(255,255,255,.75)}
+.feat{width:660px}
+.feat .nm{font-size:92px;bottom:78px;letter-spacing:-.05em}
+.feat .sub{font-size:16px;bottom:36px}
+.p{width:290px}
+.p.f{transform:scale(1.06);transform-origin:top center;box-shadow:0 0 0 5px var(--acc),0 30px 80px rgba(255,74,28,.35),0 20px 50px rgba(0,0,0,.6);margin:0 10px}
+.ok{position:absolute;left:28px;bottom:-1px}
+.cue{position:absolute;bottom:34px;left:0;right:0;display:flex;justify-content:space-between;font-size:14px;color:rgba(255,255,255,.4)}
+.clip{display:none;background:linear-gradient(90deg,rgba(12,12,14,0),#0C0C0E 80%)}
+</style></head><body>
+<div class="glowbg"></div><div class="grain"></div>
+<div class="rail"><div class="logo"></div>
+ <div class="nav">
+  <div class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" stroke-linejoin="round"/></svg></div>
+  <div><svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></div>
+  <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+  <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="16" cy="9" r="1.5" fill="currentColor"/></svg></div>
+  <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></div>
+ </div>
+ <div class="tm mono">17:52</div>
+</div>
+<div class="main">
+ <div class="greet"><span>Good evening,</span><br>Peyton<em>.</em></div>
+ <div class="info mono">
+  <div>Sun · 18 Oct 2026</div>
+  <div class="temp">48<sup>°F</sup></div>
+  <div><b>Partly cloudy</b> · H61 L34</div>
+  <div>New York, NY</div>
+ </div>
+ <div class="label mono"><b>●</b>Up next<span class="ln"></span>Favorites 01—08</div>
+ <div class="cards">
+  <div class="c feat" style="background-image:url(img/v1074.jpg)"><div class="du" style="background:linear-gradient(160deg,#FFB21C 0%,#FF4A1C 55%,#7A0F3A 100%)"></div><div class="sh"></div>
+   <div class="idx mono">01 — For kids</div><div class="tag mono">Kid lock on</div>
+   <div class="nm">Tap Zoo</div><div class="sub mono">Baby balloons · Animal parade · Bedtime</div></div>
+  <div class="c p f" style="background-image:url(img/v164.jpg)"><div class="du" style="background:linear-gradient(170deg,#FF5470,#3A0CA3)"></div><div class="sh"></div>
+   <div class="idx mono">02</div><div class="nm">Netflix</div><div class="sub mono">OK to open</div></div>
+  <div class="c p" style="background-image:url(img/v1069.jpg)"><div class="du" style="background:linear-gradient(170deg,#38E8FF,#0F3BFF)"></div><div class="sh"></div>
+   <div class="idx mono">03</div><div class="nm">Disney+</div><div class="sub mono">Watchlist · 6</div></div>
+  <div class="c p" style="background-image:url(img/v177.jpg)"><div class="du" style="background:linear-gradient(170deg,#D7FF3A,#0E8A5F)"></div><div class="sh"></div>
+   <div class="idx mono">04</div><div class="nm">YouTube</div><div class="sub mono">Continue · 27 min</div></div>
+ </div>
+ <div class="cue mono"><span>◀ ▶ Browse · Hold OK for options</span><span>▼ All apps · 42</span></div>
+</div>
+</body></html>
