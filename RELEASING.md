@@ -25,8 +25,8 @@ The keystore is **not** in this repo (`*.keystore`, `*.jks`, `*.p12` are git-ign
 ./gradlew assembleRelease -Pvc=8 -Pvn=4.3
 # -> app/build/outputs/apk/release/app-release.apk
 ```
-* `versionCode` **must be higher** than the installed one, or the updater refuses it. History: v4.0=5, v4.1=6, v4.2=7.
-  The defaults in `app/build.gradle.kts` track the current release (7 / "4.2"), so always pass `-Pvc/-Pvn` for a new one
+* `versionCode` **must be higher** than the installed one, or the updater refuses it. History: v4.0=5, v4.1=6, v4.2=7, v4.3=8.
+  The defaults in `app/build.gradle.kts` track the current release (8 / "4.3"), so always pass `-Pvc/-Pvn` for a new one
   and update the defaults in the same commit.
 * Verify before delivering:
   ```bash
@@ -87,7 +87,34 @@ Provide the *same* keystore as a secret, then decode it at build time. Never com
   v4.0/v4.1 APKs plus a throwaway "other key" copy. Without them the test is skipped, not failed. Afterwards, rebuild the real
   release, because the script leaves `app-release.apk` at versionCode 6.
 
-## Delivery: Google Drive + the in-app QR updater
+## Delivery 1: GitHub Releases + the in-app updater (preferred)
+The launcher checks `https://api.github.com/repos/PeytonRingling/tv-launcher/releases/latest` (public, no token).
+
+**Naming convention (the app depends on it):**
+* tag `v<versionName>`, e.g. `v4.3`
+* exactly one APK asset named `tv-launcher-v<versionName>-vc<versionCode>.apk`, e.g. `tv-launcher-v4.3-vc8.apk`
+
+The updater reads the versionCode from the asset name (one API call, no APK download just to compare), offers the update
+only if it's higher than the installed build, downloads it to the app cache, and before PackageInstaller sees it checks:
+package `com.peyton.tvlauncher`, signer exactly `65f0d4cb…4a4d113f` (pinned), versionCode higher than installed **and**
+equal to the one in the asset name. Other assets (`.idsig`, notes, other apps' APKs) are ignored.
+
+```bash
+tools/release.sh 8 4.3              # build + verify (aapt/apksigner) + refuse non-increasing versionCode; prints the gh command
+tools/release.sh 8 4.3 --publish    # same, then `gh release create v4.3 release/tv-launcher-v4.3-vc8.apk ...` (Peyton's OK first)
+```
+`--publish` also requires HEAD == origin/main (merge first, so the tag points at the shipped code).
+
+**Location caveat:** the weather location is compiled into the APK. If `tvlauncher.weather.*` / `TVL_WEATHER_*` are set, the
+release asset (public) contains the home location. `release.sh --publish` refuses that unless `TVL_ALLOW_LOCATION_IN_APK=1`.
+Either build releases without those props (TV shows the default city) or move the location to an on-TV setting first.
+
+On the TV: **Settings → System → Update launcher → Install x.y from GitHub** (or "Check GitHub for updates"). Android shows
+its install prompt; the first time it also asks to allow "Install unknown apps" for TV Launcher. The launcher also checks
+quietly at most once a day (20 s after start, never during the cold start) and only shows an "Update x.y available" notice
+in Settings; it never installs on its own. Rate limits (60 unauthenticated calls/hour per IP) show as a friendly error.
+
+## Delivery 2 (fallback): Google Drive + the in-app QR updater
 1. Upload `TV Launcher v<x.y>.apk` to Peyton's **Google Drive** (root, next to earlier versions). Direct downloads from chat
    don't work on his phone, so always use Drive.
 2. On the TV: Settings → System → **Update launcher**, then scan the QR with the phone, enter/confirm the 6-digit PIN, and pick

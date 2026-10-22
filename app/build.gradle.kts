@@ -8,7 +8,7 @@ android {
   namespace = "com.peyton.tvlauncher"
   compileSdk = 34
   defaultConfig {
-    applicationId = "com.peyton.tvlauncher"; minSdk = 26; targetSdk = 34; versionCode = (findProperty("vc") as String?)?.toInt() ?: 7; versionName = (findProperty("vn") as String?) ?: "4.2"
+    applicationId = "com.peyton.tvlauncher"; minSdk = 26; targetSdk = 34; versionCode = (findProperty("vc") as String?)?.toInt() ?: 8; versionName = (findProperty("vn") as String?) ?: "4.3"
     // Weather location (Open-Meteo, no key). The repo default is a neutral public city; the real home location is
     // supplied outside git via tvlauncher.weather.* Gradle props (~/.gradle/gradle.properties) or TVL_WEATHER_* env vars.
     // See RELEASING.md.

@@ -56,6 +56,9 @@ interface Actions : AmbientSource {
   fun stopUpdateServer()
   fun openInstallPermission()
   fun installPending()
+  /** GitHub Releases updater: manual check, then download + verify + PackageInstaller. Defaults keep test fakes short. */
+  fun checkGitHub() {}
+  fun installFromGitHub() {}
   fun deletePhoto(p: Photo)
   fun deleteAllPhotos()
   /** Blocking; called off the main thread. */
@@ -99,6 +102,13 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
         T("Settings", 46.sp, weight = FontWeight.ExtraLight)
         Spacer(Modifier.height(10.dp))
         T("TV Launcher ${st.versionLabel}", 15.sp, color = Ink.copy(alpha = 0.7f))
+        // Non-blocking notice from the daily GitHub check; installing stays a deliberate choice under System.
+        st.gh.release?.takeIf { st.gh.phase == GhPhase.AVAILABLE }?.let { r ->
+          Spacer(Modifier.height(10.dp))
+          T("●  Update ${r.versionName} available", 13.sp,
+            Modifier.clip(RoundedCornerShape(50)).background(Color(0x337BE0A0)).padding(horizontal = 12.dp, vertical = 5.dp), color = Color(0xFF7BE0A0), weight = FontWeight.Medium, maxLines = 1)
+          T("Install it from System › Update launcher.", 13.sp, Modifier.padding(start = 4.dp, top = 6.dp), color = Ink.copy(alpha = 0.62f), maxLines = 2)
+        }
         Spacer(Modifier.height(28.dp))
         T("Send ambient photos from your phone with \"Add photos from phone\". They're stored privately in the launcher; it never reads the TV's file storage.", 13.sp, color = Ink.copy(alpha = 0.62f), maxLines = 6)
         Spacer(Modifier.height(14.dp))
@@ -138,7 +148,8 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
         if (hidden.isEmpty()) SettingRow("Hidden apps", "None", {})
         else hidden.forEach { app -> SettingRow("Unhide ${app.label}", "Hidden", { st.unhide(app.pkg) }) }
         Section("System")
-        SettingRow("Update launcher", st.versionLabel.ifEmpty { "From phone" }, { st.screen = Screen.UPDATE })
+        val ghNew = st.gh.release?.takeIf { st.gh.phase == GhPhase.AVAILABLE }
+        SettingRow("Update launcher", if (ghNew != null) "●  ${ghNew.versionName} available" else st.versionLabel.ifEmpty { "From phone" }, { st.screen = Screen.UPDATE })
         SettingRow("Android TV settings", null, { actions.systemSettings() })
         SettingRow("Default home app", "Open", { actions.homeSettings() })
         Spacer(Modifier.height(40.dp))
@@ -319,6 +330,8 @@ fun UpdateScreen(st: LauncherState, actions: Actions) {
   DisposableEffect(Unit) { actions.startUpdateServer(); onDispose { actions.stopUpdateServer() } }
   val u = st.update ?: UpdateUi()
   val first = remember { FocusRequester() }
+  val hasPending = u.phase == UpdatePhase.READY || u.phase == UpdatePhase.NEEDS_PERMISSION || (u.phase == UpdatePhase.ERROR && u.pending != null)
+  val qrAction = !st.canInstall || hasPending   // these buttons take the initial focus; otherwise the GitHub row does
   LaunchedEffect(Unit) { delay(50); tryFocus(first) }
   val qr = remember(u.url) { u.url?.let { PhotoServer.qr(it, 480).asImageBitmap() } }
   val prog = animateFloatAsState((u.progress ?: 0f).coerceIn(0f, 1f), tween(250), label = "prog")
@@ -334,10 +347,10 @@ fun UpdateScreen(st: LauncherState, actions: Actions) {
         Spacer(Modifier.height(4.dp))
         T("Installed: TV Launcher ${st.versionLabel}", 15.sp, color = Ink.copy(alpha = 0.75f))
         Spacer(Modifier.height(12.dp))
-        Step("1", "On your phone, scan the code (same Wi-Fi as the TV).")
-        Step("2", "Pick the new TV Launcher .apk from Downloads or Drive.")
-        Step("3", "The TV checks it, then asks you to confirm. Press Install.")
-        Spacer(Modifier.height(12.dp))
+        GitHubRow(st, actions, if (qrAction) null else first)
+        Spacer(Modifier.height(14.dp))
+        T("Or from your phone: scan the code (same Wi-Fi), pick the .apk, then confirm on the TV.", 14.sp, color = Ink.copy(alpha = 0.8f), maxLines = 2)
+        Spacer(Modifier.height(8.dp))
         if (u.url != null) {
           T(u.url, 22.sp, weight = FontWeight.Medium)
           T("Code  ${u.pin}", 15.sp, Modifier.padding(top = 2.dp), color = Ink.copy(alpha = 0.75f), spacing = 2.sp)
@@ -359,9 +372,9 @@ fun UpdateScreen(st: LauncherState, actions: Actions) {
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
           if (!st.canInstall) Box(Modifier.width(330.dp)) { SettingRow("Allow installs first", "Open", { actions.openInstallPermission() }, fr = first) }
-          else if (u.phase == UpdatePhase.READY || u.phase == UpdatePhase.NEEDS_PERMISSION || (u.phase == UpdatePhase.ERROR && u.pending != null))
+          else if (hasPending)
             Box(Modifier.width(300.dp)) { SettingRow("Install ${u.pending?.versionName ?: ""}", null, { actions.installPending() }, fr = first) }
-          Box(Modifier.width(180.dp)) { SettingRow("Done", null, { st.screen = Screen.SETTINGS }, fr = if (st.canInstall && u.phase != UpdatePhase.READY && u.phase != UpdatePhase.NEEDS_PERMISSION && !(u.phase == UpdatePhase.ERROR && u.pending != null)) first else null) }
+          Box(Modifier.width(180.dp)) { SettingRow("Done", null, { st.screen = Screen.SETTINGS }) }
         }
         Spacer(Modifier.height(8.dp))
         T(if (st.canInstall) "Installs allowed for TV Launcher. Only newer builds signed with the same key are accepted."
@@ -373,4 +386,28 @@ fun UpdateScreen(st: LauncherState, actions: Actions) {
       }
     }
   }
+}
+
+/** "Check GitHub for updates" / "Install x.y from GitHub" row plus one status line; fixed height so nothing jumps. */
+@Composable
+private fun GitHubRow(st: LauncherState, actions: Actions, fr: FocusRequester?) {
+  val g = st.gh
+  val rel = g.release
+  val title = when {
+    g.phase == GhPhase.AVAILABLE && rel != null -> "Install ${rel.versionName} from GitHub"
+    g.phase == GhPhase.DOWNLOADING -> "Downloading…"
+    else -> "Check GitHub for updates"
+  }
+  val value = when (g.phase) {
+    GhPhase.IDLE -> null; GhPhase.CHECKING -> "Checking…"; GhPhase.UP_TO_DATE -> "Up to date"
+    GhPhase.AVAILABLE -> "New"; GhPhase.DOWNLOADING -> null; GhPhase.ERROR -> "Try again"
+  }
+  val color = when (g.phase) {
+    GhPhase.ERROR -> Color(0xFFFFB4A8); GhPhase.AVAILABLE -> Color(0xFF7BE0A0); GhPhase.UP_TO_DATE -> Ink.copy(alpha = 0.8f); else -> Ink.copy(alpha = 0.7f)
+  }
+  Box(Modifier.width(460.dp)) {
+    SettingRow(title, value, { if (g.phase == GhPhase.AVAILABLE) actions.installFromGitHub() else actions.checkGitHub() }, fr = fr)
+  }
+  T(g.message.ifEmpty { "Updates come from the public GitHub releases; only builds signed with this launcher's key are accepted." },
+    13.sp, Modifier.padding(start = 20.dp, top = 6.dp).height(36.dp), color = color, maxLines = 2)
 }

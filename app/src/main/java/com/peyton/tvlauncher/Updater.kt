@@ -27,8 +27,25 @@ data class UpdateUi(
   val pending: ApkMeta? = null, val serverError: String? = null,
 )
 
+enum class GhPhase { IDLE, CHECKING, UP_TO_DATE, AVAILABLE, DOWNLOADING, ERROR }
+
+/** State of the "Check GitHub for updates" row (separate from the phone/QR flow, so it survives leaving the screen). */
+data class GhUi(val phase: GhPhase = GhPhase.IDLE, val message: String = "", val release: GhRelease? = null) {
+  companion object {
+    fun of(r: GhCheck): GhUi = when (r) {
+      is GhCheck.Available -> GhUi(GhPhase.AVAILABLE, "Version ${r.release.versionName} is available on GitHub.", r.release)
+      is GhCheck.UpToDate -> GhUi(GhPhase.UP_TO_DATE, "You have the latest version (${r.latest.versionName}).", r.latest)
+      is GhCheck.Failed -> GhUi(GhPhase.ERROR, r.reason)
+    }
+  }
+}
+
 object Updater {
   const val ACTION_STATUS = "com.peyton.tvlauncher.INSTALL_STATUS"
+  /** SHA-256 of the release signing cert (see RELEASING.md). GitHub downloads must carry exactly this signer. */
+  const val RELEASE_CERT = "65f0d4cb5041d1d60f2fbbb44d0bc73174de9ea1668be0038129630a6a4d113f"
+  const val GH_REPO = "PeytonRingling/tv-launcher"
+  const val GH_ASSET_PREFIX = "tv-launcher"
 
   @Suppress("DEPRECATION")
   private fun certsOf(pi: PackageInfo): Set<String> {
@@ -78,6 +95,16 @@ object Updater {
     else -> null
   }
 
+  /**
+   * Checks for an APK downloaded from GitHub: everything [check] does (same package, shared signer, newer build), plus
+   * the signer must be the pinned release cert and the build must be the one the release asset name promised.
+   */
+  fun checkGitHub(new: ApkMeta?, cur: ApkMeta, rel: GhRelease): String? = check(new, cur) ?: when {
+    new!!.certs != setOf(RELEASE_CERT) -> "That download isn't signed with the TV Launcher release key."
+    new.versionCode != rel.versionCode -> "The download is build ${new.versionCode}, but the release says build ${rel.versionCode}."
+    else -> null
+  }
+
   fun canInstall(ctx: Context) = Build.VERSION.SDK_INT < 26 || ctx.packageManager.canRequestPackageInstalls()
 
   /** Opens the per-app "Install unknown apps" switch for this launcher (falls back to Security settings). */
@@ -121,5 +148,6 @@ object Updater {
     return id
   }
 
+  fun downloadFile(ctx: Context) = File(File(ctx.cacheDir, "updates").apply { mkdirs() }, "github.apk")
   fun pendingFile(ctx: Context) = File(File(ctx.cacheDir, "updates").apply { mkdirs() }, "verified.apk")
 }

@@ -103,6 +103,13 @@ class MainActivity : ComponentActivity(), Actions {
         }
       }
     }
+    // Quiet GitHub update check: at most once a day, well after the cold start, never installs anything by itself.
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        delay(20_000)
+        while (true) { quietGitHubCheck(); delay(60 * 60_000L) }
+      }
+    }
     // Idle → ambient.
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -400,27 +407,87 @@ class MainActivity : ComponentActivity(), Actions {
       setUpdate { it.copy(phase = UpdatePhase.RECEIVING, message = "Receiving update… ${read * 100 / total}%", progress = read / total.toFloat()) }
 
     override fun onApk(file: java.io.File): Pair<Boolean, String> {
-      setUpdate { it.copy(phase = UpdatePhase.VERIFYING, message = "Checking the file…", progress = null) }
-      val meta = Updater.inspect(this@MainActivity, file)
-      val cur = Updater.installed(this@MainActivity)
-      Updater.check(meta, cur)?.let { why ->
-        file.delete(); setUpdate { it.copy(phase = UpdatePhase.ERROR, message = why, progress = null, pending = null) }
-        return false to why
-      }
-      val dest = Updater.pendingFile(this@MainActivity); dest.delete()
-      if (!file.renameTo(dest)) { file.copyTo(dest, true); file.delete() }
-      val v = meta!!.versionName ?: meta.versionCode.toString()
-      runOnUiThread {
-        if (Updater.canInstall(this@MainActivity)) { setUpdate { it.copy(pending = meta) }; installPending() }
-        else setUpdate { it.copy(phase = UpdatePhase.NEEDS_PERMISSION, pending = meta,
-          message = "Version $v is ready. Allow installs for TV Launcher on the TV, then press Install.") }
-      }
-      return true to "Version $v checks out (same app, same key, newer). Look at the TV to confirm the install."
+      val why = verifyAndStage(file) { meta, cur -> Updater.check(meta, cur) }
+      return if (why != null) false to why
+      else true to "Version ${updSnap.pending?.versionName ?: ""} checks out (same app, same key, newer). Look at the TV to confirm the install."
     }
 
     override fun statusJson(): String {
       val u = updSnap
       return "{\"phase\":\"${u.phase}\",\"message\":${PhotoServer.q(u.message)},\"progress\":${u.progress ?: "null"}}"
+    }
+  }
+
+  /**
+   * Shared by the phone/QR path and the GitHub path: inspect the APK, run [rules] (null = OK), then stage it as the
+   * pending update and hand it to PackageInstaller (or wait for the "install unknown apps" permission). Blocking; IO thread.
+   */
+  private fun verifyAndStage(file: java.io.File, rules: (ApkMeta?, ApkMeta) -> String?): String? {
+    setUpdate { it.copy(phase = UpdatePhase.VERIFYING, message = "Checking the file…", progress = null) }
+    val meta = Updater.inspect(this, file)
+    val cur = Updater.installed(this)
+    rules(meta, cur)?.let { why ->
+      file.delete(); setUpdate { it.copy(phase = UpdatePhase.ERROR, message = why, progress = null, pending = null) }
+      return why
+    }
+    val dest = Updater.pendingFile(this); dest.delete()
+    if (!file.renameTo(dest)) { file.copyTo(dest, true); file.delete() }
+    val v = meta!!.versionName ?: meta.versionCode.toString()
+    updSnap = updSnap.copy(pending = meta)
+    runOnUiThread {
+      if (Updater.canInstall(this)) { setUpdate { it.copy(pending = meta) }; installPending() }
+      else setUpdate { it.copy(phase = UpdatePhase.NEEDS_PERMISSION, pending = meta,
+        message = "Version $v is ready. Allow installs for TV Launcher on the TV, then press Install.") }
+    }
+    return null
+  }
+
+  // ------------------------------------------------------------ self-update from GitHub Releases
+
+  private var ghJob: Job? = null
+  private fun installedVc() = runCatching { Updater.installed(this).versionCode }.getOrDefault(Long.MAX_VALUE)
+
+  /** Background check (see onCreate): quiet, at most once a day; only ever shows the "update available" badge. */
+  private suspend fun quietGitHubCheck() {
+    val prefs = Prefs(this)
+    if (st.gh.phase in setOf(GhPhase.AVAILABLE, GhPhase.CHECKING, GhPhase.DOWNLOADING)) return
+    if (System.currentTimeMillis() - prefs.ghLastCheck < 24 * 60 * 60_000L) return
+    val vc = installedVc()
+    val r = withContext(Dispatchers.IO) { GitHubReleases.fetchLatest(Updater.GH_REPO, Updater.GH_ASSET_PREFIX, vc) }
+    // An available update isn't recorded, so a restart re-checks once and the badge comes back.
+    if (r !is GhCheck.Available) prefs.ghLastCheck = System.currentTimeMillis()
+    if (st.gh.phase == GhPhase.CHECKING || st.gh.phase == GhPhase.DOWNLOADING) return   // a manual check won the race
+    if (r !is GhCheck.Failed) st.gh = GhUi.of(r)   // errors stay silent in the background
+  }
+
+  override fun checkGitHub() {
+    if (st.gh.phase == GhPhase.CHECKING || st.gh.phase == GhPhase.DOWNLOADING) return
+    st.gh = GhUi(GhPhase.CHECKING, "Checking GitHub for updates…", st.gh.release)
+    ghJob = lifecycleScope.launch {
+      val vc = installedVc()
+      val r = withContext(Dispatchers.IO) { GitHubReleases.fetchLatest(Updater.GH_REPO, Updater.GH_ASSET_PREFIX, vc) }
+      if (r !is GhCheck.Available) Prefs(this@MainActivity).ghLastCheck = System.currentTimeMillis()
+      st.gh = GhUi.of(r)
+    }
+  }
+
+  override fun installFromGitHub() {
+    val rel = st.gh.release?.takeIf { st.gh.phase == GhPhase.AVAILABLE } ?: return checkGitHub()
+    st.gh = GhUi(GhPhase.DOWNLOADING, "Downloading version ${rel.versionName}…", rel)
+    setUpdate { it.copy(phase = UpdatePhase.RECEIVING, message = "Downloading ${rel.versionName} from GitHub…", progress = 0f, pending = null) }
+    ghJob = lifecycleScope.launch {
+      val f = Updater.downloadFile(this@MainActivity)
+      val why = withContext(Dispatchers.IO) {
+        try {
+          GitHubReleases.download(rel, f) { read, total ->
+            if (total > 0) setUpdate { it.copy(phase = UpdatePhase.RECEIVING, message = "Downloading ${rel.versionName}… ${read * 100 / total}%", progress = read / total.toFloat()) }
+          }
+          verifyAndStage(f) { meta, cur -> Updater.checkGitHub(meta, cur, rel) }
+        } catch (e: java.io.IOException) {
+          f.delete(); (e.message ?: "Download failed.").also { m -> setUpdate { it.copy(phase = UpdatePhase.ERROR, message = m, progress = null) } }
+        }
+      }
+      st.gh = if (why == null) GhUi(GhPhase.AVAILABLE, "Version ${rel.versionName} downloaded and verified.", rel) else GhUi(GhPhase.ERROR, why, rel)
     }
   }
 
@@ -481,7 +548,7 @@ class MainActivity : ComponentActivity(), Actions {
         setUpdate { it.copy(phase = UpdatePhase.CONFIRM, message = "Confirm the update on the TV: choose Update / Install.") }
         if (confirm == null || !start(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) setUpdate { it.copy(phase = UpdatePhase.ERROR, message = "The TV didn't show the install prompt.") }
       }
-      android.content.pm.PackageInstaller.STATUS_SUCCESS -> { Updater.pendingFile(this).delete(); setUpdate { it.copy(phase = UpdatePhase.DONE, message = "Updated! The launcher restarts on the new version.", pending = null) } }
+      android.content.pm.PackageInstaller.STATUS_SUCCESS -> { Updater.pendingFile(this).delete(); st.gh = GhUi(); setUpdate { it.copy(phase = UpdatePhase.DONE, message = "Updated! The launcher restarts on the new version.", pending = null) } }
       android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> setUpdate { it.copy(phase = UpdatePhase.ERROR, message = "Install was cancelled on the TV. Press Install to try again.") }
       android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE -> setUpdate { it.copy(phase = UpdatePhase.ERROR, message = "Not enough storage on the TV for the update.") }
       android.content.pm.PackageInstaller.STATUS_FAILURE_CONFLICT, android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->

@@ -1,6 +1,6 @@
 # AGENTS.md: TV Launcher ("Glass Dock", com.peyton.tvlauncher)
 
-Kotlin + Jetpack Compose home-screen app for Peyton's Hisense Google TV (D-pad only). Current release: **v4.2, versionCode 7**.
+Kotlin + Jetpack Compose home-screen app for Peyton's Hisense Google TV (D-pad only). Current release: **v4.2, versionCode 7** (gradle defaults already at v4.3 / 8 for the GitHub-updater release).
 
 ## Build / test
 ```bash
@@ -26,8 +26,13 @@ Needs JDK 17+ and an Android SDK with platform 34 and build-tools 34.0.0 (`local
   while that screen is open.
 
 ## Delivery
-Upload `TV Launcher v<x.y>.apk` to Peyton's Google Drive, and he installs it with Settings → System → Update launcher (QR updater).
-Uploading or sending anything needs his approval.
+* Preferred: GitHub Releases. `tools/release.sh <vc> <vn>` builds + verifies; add `--publish` to create the release. Tag `v<vn>`,
+  asset `tv-launcher-v<vn>-vc<vc>.apk` (the app parses this name). The TV installs it from Settings → System → Update launcher.
+  The APK embeds the weather location, so don't publish one built with the private `tvlauncher.weather.*` props without Peyton's OK.
+* Fallback: upload `TV Launcher v<x.y>.apk` to Peyton's Google Drive; he installs it with the QR updater on the same screen.
+* Publishing a release, uploading or sending anything needs his approval.
+* Updater code: `GitHubReleases.kt` (API client, pure parsing/error mapping), `Updater.kt` (verification + PackageInstaller,
+  shared with the QR path), `MainActivity` (flow + daily quiet check). Tests: `GitHubReleasesTest`, `GitHubUpdateTest`.
 
 ## Layout
 `app/` source and tests · `scripts/` adb helpers for the TV (inventory, debloat SAFE/OPTIONAL/RISKY, restore, set/restore

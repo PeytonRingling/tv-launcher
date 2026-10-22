@@ -146,6 +146,10 @@ class Prefs(ctx: Context) {
   var ambientSource: Int
     get() = sp.getInt("ambientSource", 0)
     set(v) = sp.edit().putInt("ambientSource", v).apply()
+  /** Last GitHub update check (any outcome), for the at-most-daily quiet check. */
+  var ghLastCheck: Long
+    get() = sp.getLong("ghLastCheck", 0L)
+    set(v) = sp.edit().putLong("ghLastCheck", v).apply()
   var lastVersionCode: Long
     get() = sp.getLong("lastVersionCode", 0L)
     set(v) = sp.edit().putLong("lastVersionCode", v).apply()
@@ -335,6 +339,7 @@ class LauncherState(private val prefs: Prefs) {
   var upload by mutableStateOf<UploadUi?>(null)
   var update by mutableStateOf<UpdateUi?>(null)
   var canInstall by mutableStateOf(false)
+  var gh by mutableStateOf(GhUi())
   var versionLabel by mutableStateOf("")
   /** Pre-blurred copy of the wallpaper; glass surfaces sample it at their screen position. */
   var backdrop by mutableStateOf<ImageBitmap?>(null)

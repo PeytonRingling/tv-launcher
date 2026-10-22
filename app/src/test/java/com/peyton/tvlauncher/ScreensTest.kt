@@ -432,6 +432,22 @@ class ScreensTest {
     rule.waitForIdle()
     rule.onRoot().captureRoboImage("$out/08_icon_normalization.png")
   }
+
+  // ======================= GitHub updater (v4.3) =======================
+  private val ghRel = GhRelease("v4.3", "4.3", 8, "tv-launcher-v4.3-vc8.apk", "https://example.invalid/x.apk", 1)
+  private fun ghShot(name: String, gh: GhUi, screen: Screen = Screen.UPDATE) = shot("../gh/$name", state()) {
+    it.versionLabel = "4.2 (build 7)"; it.canInstall = true; it.gh = gh
+    it.update = UpdateUi("http://192.168.1.42:8766/731402", "731402"); it.screen = screen
+  }
+  @Test fun ghChecking() = ghShot("G1_checking", GhUi(GhPhase.CHECKING, "Checking GitHub for updates…"))
+  @Test fun ghUpToDate() = ghShot("G2_up_to_date", GhUi(GhPhase.UP_TO_DATE, "You have the latest version (4.2).", ghRel.copy(versionName = "4.2", versionCode = 7)))
+  @Test fun ghAvailable() = ghShot("G3_update_available", GhUi(GhPhase.AVAILABLE, "Version 4.3 is available on GitHub.", ghRel))
+  @Test fun ghError() = ghShot("G4_error_rate_limited", GhUi(GhPhase.ERROR, "GitHub's limit for update checks was reached. Try again in about 25 min."))
+  @Test fun ghSettingsBadge() = ghShot("G5_settings_badge", GhUi(GhPhase.AVAILABLE, "Version 4.3 is available on GitHub.", ghRel), Screen.SETTINGS)
+  @Test fun ghDownloading() = shot("../gh/G6_downloading", state()) {
+    it.versionLabel = "4.2 (build 7)"; it.canInstall = true; it.gh = GhUi(GhPhase.DOWNLOADING, "Downloading version 4.3…", ghRel)
+    it.update = UpdateUi("http://192.168.1.42:8766/731402", "731402", UpdatePhase.RECEIVING, "Downloading 4.3… 48%", 0.48f); it.screen = Screen.UPDATE
+  }
 }
 
 private fun Modifier.androidx_bg() = this.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF1A2236), androidx.compose.ui.graphics.Color(0xFF0B0D14))))
