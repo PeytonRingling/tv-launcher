@@ -120,7 +120,10 @@ only a list of 366 references (`VerseRefs.kt`).
    paste the key and press Save. The TV checks it once, finds the NIV, and stores the key only in the launcher's private
    storage (excluded from backups and device transfer). (A private build can carry the key instead; see RELEASING.md.)
 3. The TV fetches today + the next 14 days at once (about one API call a day, far under Starter's 5,000/month), keeps them for
-   at most 30 days, and shows the verse, its reference, API.Bible's copyright line and "API.Bible · api.bible". Each time the
+   at most 30 days, and shows the verse and its reference with the short-form notice API.Bible allows when space is limited
+   (e.g. "Psalm 46:10 · NIV © 2011 Biblica, Inc. All rights reserved."). The full copyright text and "Powered by API.Bible —
+   api.bible" are always in Settings › Verse of the day (About & credits). **Show copyright on card** (default **On**) controls
+   the short notice; API.Bible's terms expect it, so leave it on unless the TV is purely for your own use. Each time the
    verse is shown it sends API.Bible's anonymous FUMS usage report. Without a key the card says "Add your API.Bible key in Settings."
 
 ## Build

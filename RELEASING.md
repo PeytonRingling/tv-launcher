@@ -69,6 +69,9 @@ forbid making the key available to anyone else, and this repo and its GitHub rel
   into private storage, exactly like the QR path. Later public updates have no seed and keep the stored key. Anyone with
   the private APK can extract the key: deliver it only through Peyton's own Drive, never GitHub. The script runs
   `./gradlew clean` at the end so no key-bearing build output is left in `app/build`.
+* The private flag also seeds Settings › Verse of the day › **Show copyright on card** OFF, once, on first launch and only
+  if it was never set (Peyton's personal choice; it departs from API.Bible's attribution terms, so public builds keep it ON).
+  Bump the private versionCode above whatever is installed, e.g. `tools/build-private.sh 9 4.3.1` over the private vc 8.
 * **No seed at all**: Settings › Verse of the day › Add API.Bible key shows a QR + PIN; paste the key on the phone.
 * Removing the key in Settings also deletes the cached verses and stops a seeded build from re-adding it.
 

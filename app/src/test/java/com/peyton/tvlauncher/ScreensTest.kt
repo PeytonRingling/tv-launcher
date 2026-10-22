@@ -472,15 +472,35 @@ class ScreensTest {
 
   // ======================= Verse of the day (API.Bible) =======================
   // Render fixtures use public-domain World English Bible text labelled WEB: no NIV text is stored in this repo.
+  // Notice renders: a made-up holder so the short form is visible ("WEB © 2026 Example Bible Society. All rights reserved.").
+  private val fakeNotice = "Render fixture © 2026 by Example Bible Society. Used by permission. All rights reserved worldwide."
   private val webShort = Verse("2026-10-21", "PSA.46.10", "Psalms 46:10", "Be still, and know that I am God. I will be exalted among the nations. I will be exalted in the earth.",
-    "Render fixture: World English Bible (public domain). On the TV this is the copyright line API.Bible returns.", "fixture-fums", 0L)
+    fakeNotice, "fixture-fums", 0L)
   private val webLong = Verse("2026-10-21", "ISA.41.10", "Isaiah 41:10", "Don't you be afraid, for I am with you. Don't be dismayed, for I am your God. I will strengthen you. Yes, I will help you. Yes, I will uphold you with the right hand of my righteousness.",
-    "Render fixture: World English Bible (public domain). On the TV this line is the full copyright notice API.Bible returns with each verse, which can run to a few lines.", "fixture-fums", 0L)
+    fakeNotice, "fixture-fums", 0L)
   private fun verseState(v: Verse?, key: Boolean, wall: String = "canyon") = state(wall).apply {
     verseKey = key; verseAbbr = "WEB"; verse = v
     changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, HomeCard.WEATHER to CardSlot.RIGHT))
   }
-  @Test fun verseShort() = shot("../verse/V1_home_verse_card_short", verseState(webShort, true))
+  @Test fun verseShort() = shot("../verse/V1_home_verse_card_short_notice_on", verseState(webShort, true))
+  @Test fun verseShortNoNotice() = shot("../verse/V1b_home_verse_card_short_notice_off", verseState(webShort, true)) { it.changeVerseNotice(false) }
+  /** Both states through the real card: on = reference + short notice; off = reference only, no ©, no api.bible on the card. */
+  @Test fun verseNoticeStates() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(3) { rule.mainClock.advanceTimeBy(500); Thread.sleep(100) }
+    fun cardText() = rule.onAllNodes(androidx.compose.ui.test.hasText("Psalms", substring = true) or androidx.compose.ui.test.hasText("Psalms\u00A0", substring = true))
+      .fetchSemanticsNodes()
+      .flatMap { n -> n.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) { emptyList() }.map { it.text.replace('\u00A0', ' ') } }
+    assertTrue(cardText().any { it.contains("Psalms 46:10") && it.contains("WEB © 2026 Example Bible Society. All rights reserved.") })
+    assertEquals(0, rule.onAllNodesWithText("api.bible", substring = true).fetchSemanticsNodes().size)
+    st.changeVerseNotice(false)
+    repeat(3) { rule.mainClock.advanceTimeBy(400); Thread.sleep(100) }
+    assertEquals(listOf("Psalms 46:10"), cardText().filter { it.startsWith("Psalms") })
+    assertTrue(cardText().none { it.contains("©") })
+    assertEquals(0, rule.onAllNodesWithText("api.bible", substring = true).fetchSemanticsNodes().size)
+  }
   @Test fun verseLong() = shot("../verse/V2_home_verse_card_long", verseState(webLong, true, "fjord"))
   @Test fun versePrompt() = shot("../verse/V3_home_verse_prompt_no_key", verseState(null, false))
   @Test fun verseKeyScreen() = shot("../verse/V4_add_key_qr_screen", verseState(null, false)) {
@@ -497,7 +517,7 @@ class ScreensTest {
     rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
     st.screen = Screen.SETTINGS
     rule.mainClock.advanceTimeBy(1500); Thread.sleep(300)
-    rule.onAllNodesWithText("Kept on this TV", substring = true)[0].performScrollTo()
+    rule.onAllNodesWithText("Remove API.Bible key")[0].performScrollTo()
     rule.mainClock.advanceTimeBy(1500)
     rule.onRoot().captureRoboImage("../screens/verse/V9_settings_verse_section.png")
   }

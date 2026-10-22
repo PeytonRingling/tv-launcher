@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity(), Actions {
       hide(WindowInsetsCompat.Type.systemBars())
       systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
+    VerseSeed.applyNoticeDefault(Prefs(this).sp, BuildConfig.VERSE_NOTICE_OFF_BY_DEFAULT)   // before the first frame: no flip
     st = LauncherState(Prefs(this))
     // Cold start: last dock + frosted backdrop from app storage, before the first frame (a few small PNGs), so the dock
     // and glass are complete immediately; the live app load below swaps in identical entries without any reflow.

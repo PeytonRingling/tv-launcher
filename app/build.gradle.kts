@@ -23,6 +23,8 @@ android {
   compileSdk = 34
   defaultConfig {
     applicationId = "com.peyton.tvlauncher"; minSdk = 26; targetSdk = 34; versionCode = (findProperty("vc") as String?)?.toInt() ?: 8; versionName = (findProperty("vn") as String?) ?: "4.3"
+    // Private build only: start with "Show copyright on card" off (Peyton's personal choice; public builds stay compliant by default).
+    buildConfigField("boolean", "VERSE_NOTICE_OFF_BY_DEFAULT", privateBuild.toString())
     buildConfigField("String", "API_BIBLE_SEED", "\"${if (privateBuild) apiBibleSeed else ""}\"")
   }
   signingConfigs {

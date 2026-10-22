@@ -163,6 +163,15 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
         fun cycleVerse(d: Int) { val sl = CardSlot.values(); val m = LinkedHashMap(st.cards); m[HomeCard.VERSE] = sl[(sl.indexOf(verseSlot) + d + sl.size) % sl.size]; st.changeCards(m) }
         SettingRow(if (st.verseKey) "Replace API.Bible key" else "Add API.Bible key", if (st.verseKey) "Saved · ${st.verseAbbr}" else "Scan QR", { st.keyUi = null; st.screen = Screen.VERSE_KEY })
         SettingRow("Show on home", verseSlot.title, { cycleVerse(1) }, { cycleVerse(-1) }, { cycleVerse(1) })
+        val flipNotice = { st.changeVerseNotice(!st.verseNotice) }
+        SettingRow("Show copyright on card", if (st.verseNotice) "On" else "Off", flipNotice, flipNotice, flipNotice)
+        // Credits: the full copyright line from API.Bible and the Starter plan's required citation of api.bible.
+        Column(Modifier.padding(start = 20.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
+          T("ABOUT & CREDITS", 11.sp, weight = FontWeight.SemiBold, color = Ink.copy(alpha = 0.5f), spacing = 1.5.sp)
+          T("Powered by API.Bible — api.bible", 14.sp, Modifier.padding(top = 4.dp), weight = FontWeight.Medium, color = Ink.copy(alpha = 0.85f))
+          T(st.verse?.copyright?.takeIf { it.isNotBlank() } ?: if (st.verseKey) "The publisher's copyright notice appears here once today's verse has been fetched."
+            else "Scripture text comes from API.Bible with your key; its copyright notice appears here.", 12.5.sp, Modifier.padding(top = 4.dp), color = Ink.copy(alpha = 0.62f), maxLines = 5)
+        }
         if (st.verseKey) SettingRow("Remove API.Bible key", null, { confirmRemoveKey = true })
         T(when {
           !st.verseKey -> "NIV text from API.Bible with your own free key (api.bible). Nothing is bundled in the app."

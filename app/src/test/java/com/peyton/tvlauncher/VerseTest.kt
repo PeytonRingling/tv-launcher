@@ -47,6 +47,17 @@ class VerseTest {
     assertEquals("", VerseText.plain("<br/> "))
   }
 
+  @Test fun shortNotice() {
+    // Shape of the live NIV copyright field (a notice, not Scripture text).
+    val live = "The Holy Bible, New International Version® NIV® Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by Permission of Biblica, Inc.® All rights reserved worldwide."
+    assertEquals("NIV © 2011 Biblica, Inc. All rights reserved.", VerseText.shortNotice("NIV", live))
+    assertEquals("NIV © 2011 Biblica, Inc. All rights reserved.", VerseText.shortNotice("NIV", "Copyright © 2011 by Biblica, Inc. All rights reserved."))
+    assertEquals("XYZ © 2026 Example Org. All rights reserved.", VerseText.shortNotice("XYZ", "Text © 2001, 2026 by Example Org"))
+    assertEquals(VerseText.NIV_SHORT, VerseText.shortNotice("NIV", ""))                      // unparseable → fixed short form
+    assertEquals(VerseText.NIV_SHORT, VerseText.shortNotice("NIV", "Fixture text: World English Bible (public domain)."))
+    assertEquals("WEB", VerseText.shortNotice("WEB", "Public domain."))
+  }
+
   @Test fun fitsCard() {
     assertTrue(VerseText.fits("Jesus wept.", "John 11:35"))
     assertTrue(VerseText.fits("x".repeat(VerseText.MAX_CHARS), "John 3:16"))
@@ -349,4 +360,20 @@ class VerseTest {
     s.route = { FakeHttp.Res(503, "{}") }; assertTrue((VerseApi.validate(key) as KeyCheck.Invalid).retry)
     VerseApi.apiBase = "http://127.0.0.1:1"; assertTrue((VerseApi.validate(key) as KeyCheck.Invalid).retry)
   } }
+
+  // ---------------------------------------------------------------- "Show copyright on card"
+
+  @Test fun noticeSettingDefaultsOnAndPersists() {
+    assertFalse(BuildConfig.VERSE_NOTICE_OFF_BY_DEFAULT)                       // public/debug builds
+    assertTrue(LauncherState(Prefs(ctx)).verseNotice)
+    assertFalse(VerseSeed.applyNoticeDefault(launcherSp, false)); assertTrue(LauncherState(Prefs(ctx)).verseNotice)
+    LauncherState(Prefs(ctx)).changeVerseNotice(false)
+    assertFalse(LauncherState(Prefs(ctx)).verseNotice)                           // survives restart
+  }
+
+  @Test fun privateBuildSeedsNoticeOffOnceOnly() {
+    assertTrue(VerseSeed.applyNoticeDefault(launcherSp, true)); assertFalse(LauncherState(Prefs(ctx)).verseNotice)
+    LauncherState(Prefs(ctx)).changeVerseNotice(true)                            // user turns it back on
+    assertFalse(VerseSeed.applyNoticeDefault(launcherSp, true)); assertTrue(LauncherState(Prefs(ctx)).verseNotice)
+  }
 }

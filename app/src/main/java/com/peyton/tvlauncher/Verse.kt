@@ -59,6 +59,27 @@ object VerseText {
     return t.replace(Regex("\\s+"), " ").trim()
   }
 
+  /** Used when the API's copyright line can't be parsed (the NIV's current notice, short form). */
+  const val NIV_SHORT = "NIV © 2011 Biblica, Inc. All rights reserved."
+
+  /**
+   * Short-form notice for the card, per API.Bible Terms Appendix A ("If space constrained, you may abbreviate to:
+   * [Bible translation abbreviation] © [Year] [Organization name.] All rights reserved."). Year = the latest year in the
+   * API's copyright line, holder = the text after "by" (e.g. "… 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by …"
+   * → "NIV © 2011 Biblica, Inc. All rights reserved."). Falls back to [NIV_SHORT] for the NIV, else just the abbreviation.
+   */
+  fun shortNotice(abbr: String, copyright: String): String {
+    val c = copyright.replace(Regex("[®™]"), " ").replace(Regex("\\s+"), " ")
+    val year = Regex("\\b(1[89]\\d\\d|2\\d\\d\\d)\\b").findAll(c).map { it.value.toInt() }.maxOrNull()
+    val holder = Regex("(?:\\d{4})\\s*,?\\s*by\\s+(.+?)(?:\\s+Used by|\\s+All rights|\\s*$)", RegexOption.IGNORE_CASE).find(c)
+      ?.groupValues?.get(1)?.trim()?.trimEnd(',', ';')?.takeIf { it.length in 3..40 }
+    return when {
+      year != null && holder != null -> "$abbr © $year ${holder.trimEnd('.')}. All rights reserved."
+      abbr == "NIV" -> NIV_SHORT
+      else -> abbr
+    }
+  }
+
   fun fits(text: String, reference: String) = text.isNotEmpty() && text.length <= MAX_CHARS && reference.length <= MAX_REF
 }
 
@@ -279,6 +300,15 @@ object VerseSeed {
       is KeyCheck.Valid -> { store.cred = VerseCred(seed, r.bibleId, r.abbr); Result.SAVED }
       is KeyCheck.Invalid -> if (r.retry) Result.RETRY_LATER else { launcher.edit().putLong(REJECTED_VC, versionCode).apply(); Result.REJECTED }
     }
+  }
+
+  /** Pref for Settings › Verse of the day › Show copyright on card (default ON). */
+  const val NOTICE = "verseNotice"
+
+  /** Private build: seed "Show copyright on card" OFF once, only if the user has never set it. Returns true if it changed. */
+  fun applyNoticeDefault(launcher: android.content.SharedPreferences, offByDefault: Boolean): Boolean {
+    if (!offByDefault || launcher.contains(NOTICE)) return false
+    launcher.edit().putBoolean(NOTICE, false).commit(); return true
   }
 
   /** "Remove API.Bible key" in Settings: a seeded build must not quietly put it back. */

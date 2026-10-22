@@ -349,6 +349,9 @@ class LauncherState(private val prefs: Prefs) {
   // ---- Verse of the day (API.Bible). Today's cached verse is read before the first frame, so the card never pops in.
   var verseKey by mutableStateOf(prefs.verse.hasKey)
   var verseAbbr by mutableStateOf(prefs.verse.abbr)
+  /** Settings › Verse of the day › Show copyright on card. ON by default (API.Bible terms); private builds seed it off once. */
+  var verseNotice by mutableStateOf(prefs.sp.getBoolean(VerseSeed.NOTICE, true))
+  fun changeVerseNotice(v: Boolean) { verseNotice = v; prefs.sp.edit().putBoolean(VerseSeed.NOTICE, v).apply() }
   var verse by mutableStateOf(prefs.verse.get(java.time.LocalDate.now()))
   /** Last sync error (null = fine). Shown on the card only when there's no verse for today. */
   var verseStatus by mutableStateOf<VerseStatus?>(null)

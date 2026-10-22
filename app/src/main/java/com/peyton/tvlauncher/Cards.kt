@@ -1,6 +1,7 @@
 package com.peyton.tvlauncher
 
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -297,20 +298,39 @@ private fun VerseCard(st: LauncherState, actions: Actions, width: Dp) {
     (androidx.compose.animation.fadeIn(tween(520, delayMillis = 120)) togetherWith androidx.compose.animation.fadeOut(tween(260)))
       .using(androidx.compose.animation.SizeTransform(clip = false) { _, _ -> tween(420) })
   }, label = "verse") { s ->
-    if (s is VerseShown) VerseBody(s, width) else Placeholder("VERSE OF THE DAY", s as String, width)
+    if (s is VerseShown) VerseBody(s, st.verseNotice, width) else Placeholder("VERSE OF THE DAY", s as String, width)
   }
 }
 
 @Composable
-private fun VerseBody(s: VerseShown, width: Dp) {
-  Column(Modifier.width(width).frosted(CardShape).padding(horizontal = 18.dp, vertical = 15.dp)) {
+private fun VerseBody(s: VerseShown, showNotice: Boolean, width: Dp) {
+  // Toggling the notice: it fades while the card's height eases (animateContentSize), so nothing jumps.
+  val k by animateFloatAsState(if (showNotice) 1f else 0f, tween(260), label = "notice")
+  Column(Modifier.width(width).frosted(CardShape).animateContentSize(tween(320)).padding(horizontal = 18.dp, vertical = 15.dp)) {
     CardTitle("VERSE OF THE DAY")
     val n = s.text.length
-    // Sized to fit without truncation: everything up to VerseText.MAX_CHARS fits at 13sp; longer (rare, last resort) at 12sp.
-    val size = when { n <= 90 -> 16.sp; n <= 150 -> 14.5.sp; n <= VerseText.MAX_CHARS -> 13.sp; else -> 12.sp }
+    // Sized to fit without truncation (no fine print on the card): up to VerseText.MAX_CHARS fits at 14sp.
+    val size = when { n <= 100 -> 16.5.sp; n <= 160 -> 15.sp; n <= VerseText.MAX_CHARS -> 14.sp; else -> 12.5.sp }
     T(s.text, size, weight = FontWeight.Medium, shadow = TextShadow, maxLines = 16)
-    T("${s.reference} · ${s.abbr}", 12.sp, Modifier.padding(top = 8.dp), weight = FontWeight.SemiBold, color = Ink.copy(alpha = 0.92f), shadow = TextShadow, maxLines = 2)
-    if (s.copyright.isNotEmpty()) T(s.copyright, 9.5.sp, Modifier.padding(top = 6.dp), color = Ink.copy(alpha = 0.7f), shadow = TextShadow, maxLines = 8)
-    T("API.Bible · api.bible", 9.5.sp, Modifier.padding(top = 4.dp), weight = FontWeight.SemiBold, color = Ink.copy(alpha = 0.78f), shadow = TextShadow)
+    // Reference, then (setting on) the short-form notice "· NIV © 2011 Biblica, Inc. All rights reserved." (API.Bible Terms,
+    // Appendix A). The full copyright line and "Powered by API.Bible" are always in Settings › Verse of the day.
+    val notice = remember(s) { VerseText.shortNotice(s.abbr, s.copyright).replace(" ", "\u00A0")
+      .replace("\u00A0©\u00A0", " ©\u00A0").replace(".\u00A0All", ". All") }   // wrap only before © or "All rights reserved."
+    val noticeOn = showNotice || k > 0.01f
+    androidx.compose.foundation.text.BasicText(
+      androidx.compose.ui.text.buildAnnotatedString {
+        pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Ink.copy(alpha = 0.95f), shadow = TextShadow))
+        append(s.reference.replace(" ", "\u00A0")); pop()
+        if (noticeOn) {
+          pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Medium, fontSize = 10.5.sp, color = Ink.copy(alpha = 0.72f * k),
+            shadow = TextShadow.copy(color = TextShadow.color.copy(alpha = TextShadow.color.alpha * k))))
+          append("  ·  "); append(notice); pop()
+        }
+      },
+      Modifier.padding(top = 9.dp),
+      style = androidx.compose.ui.text.TextStyle(fontFamily = Inter, lineHeight = 15.sp,
+        fontSynthesis = androidx.compose.ui.text.font.FontSynthesis.None),
+      maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Clip,
+    )
   }
 }
