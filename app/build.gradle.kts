@@ -4,11 +4,26 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 fun signingValue(prop: String, env: String, default: String): String =
   (project.findProperty(prop) as String?)?.takeIf { it.isNotBlank() } ?: System.getenv(env)?.takeIf { it.isNotBlank() } ?: default
 
+/**
+ * Verse-of-the-day key seed for a PRIVATE build only (tools/build-private.sh, delivered via Peyton's own Drive).
+ * Source: -PAPI_BIBLE_KEY=… (an explicit empty -P wins over the env) or the API_BIBLE_KEY env var. Never committed.
+ * It is compiled in only with -Ptvlauncher.private=true; building a release/APK with a key present but no private flag fails,
+ * so a public GitHub build can't pick it up by accident (tools/release.sh passes -PAPI_BIBLE_KEY= and scans the APK).
+ */
+val apiBibleSeed: String = ((findProperty("API_BIBLE_KEY") as String?) ?: System.getenv("API_BIBLE_KEY") ?: "").trim()
+val privateBuild = (findProperty("tvlauncher.private") as String?) == "true"
+val buildsApk = gradle.startParameter.taskNames.any { t -> listOf("assemble", "bundle", "install", "package").any { t.contains(it, ignoreCase = true) } }
+if (apiBibleSeed.isNotEmpty() && !privateBuild && buildsApk)
+  throw GradleException("API_BIBLE_KEY is set but this isn't a private build. Public builds: tools/release.sh (forces an empty seed). Private: tools/build-private.sh.")
+if (privateBuild && !Regex("[A-Za-z0-9_-]{16,128}").matches(apiBibleSeed))
+  throw GradleException("Private build: API_BIBLE_KEY is missing or doesn't look like an API.Bible key.")
+
 android {
   namespace = "com.peyton.tvlauncher"
   compileSdk = 34
   defaultConfig {
     applicationId = "com.peyton.tvlauncher"; minSdk = 26; targetSdk = 34; versionCode = (findProperty("vc") as String?)?.toInt() ?: 8; versionName = (findProperty("vn") as String?) ?: "4.3"
+    buildConfigField("String", "API_BIBLE_SEED", "\"${if (privateBuild) apiBibleSeed else ""}\"")
   }
   signingConfigs {
     // Every release MUST be signed with the same key as v1..v4.2 (cert SHA-256 65f0d4cb...4a4d113f), or the

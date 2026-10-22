@@ -57,6 +57,21 @@ or an update from v4.2 shows "Set your ZIP code…" on the weather cards until a
 `tools/release.sh` fails if the APK contains any legacy location value (it greps the unpacked APK for the old
 `tvlauncher.weather.*` values if a machine still has them, and for `WEATHER_*` BuildConfig fields).
 
+## Verse of the day: the API.Bible key is never in the repo or a public APK
+The verse card shows the NIV from **API.Bible** with Peyton's own free key (Starter plan, non-commercial). API.Bible's terms
+forbid making the key available to anyone else, and this repo and its GitHub releases are public, so:
+* **Public builds** (`tools/release.sh`) force an empty seed (`-PAPI_BIBLE_KEY=`), then fail if the APK contains the key
+  (from the `API_BIBLE_KEY` env var or `~/.gradle/gradle.properties`, never printed), if `BuildConfig.API_BIBLE_SEED` isn't
+  empty, if `API_BIBLE_KEY` appears in the repo's properties files, or if the dex looks like it contains Scripture text.
+  Any other `assemble*` with `API_BIBLE_KEY` set but no `-Ptvlauncher.private=true` fails in Gradle.
+* **Private build** for Drive only: `API_BIBLE_KEY=… tools/build-private.sh 8 4.3` → `release/private/tv-launcher-v4.3-vc8-private.apk`
+  (git-ignored; same versionCode, signer checked). On first launch the app checks the seed with API.Bible once and moves it
+  into private storage, exactly like the QR path. Later public updates have no seed and keep the stored key. Anyone with
+  the private APK can extract the key: deliver it only through Peyton's own Drive, never GitHub. The script runs
+  `./gradlew clean` at the end so no key-bearing build output is left in `app/build`.
+* **No seed at all**: Settings › Verse of the day › Add API.Bible key shows a QR + PIN; paste the key on the phone.
+* Removing the key in Settings also deletes the cached verses and stops a seeded build from re-adding it.
+
 ## Building on another machine / a cloud agent (documented only, not set up)
 Provide the *same* keystore as a secret, then decode it at build time. Never commit it.
 1. On the box, once: `base64 -w0 ~/.android/debug.keystore` and store the output as a secret
@@ -107,6 +122,8 @@ quietly at most once a day (20 s after start, never during the cold start) and o
 in Settings; it never installs on its own. Rate limits (60 unauthenticated calls/hour per IP) show as a friendly error.
 
 ## Delivery 2 (fallback): Google Drive + the in-app QR updater
+(The private, key-seeded APK from `tools/build-private.sh` goes this way only. The QR updater needs a higher versionCode than the
+one installed, so the private v4.3 (vc 8) installs over v4.2 (vc 7), not over a public vc 8.)
 1. Upload `TV Launcher v<x.y>.apk` to Peyton's **Google Drive** (root, next to earlier versions). Direct downloads from chat
    don't work on his phone, so always use Drive.
 2. On the TV: Settings → System → **Update launcher**, then scan the QR with the phone, enter/confirm the 6-digit PIN, and pick

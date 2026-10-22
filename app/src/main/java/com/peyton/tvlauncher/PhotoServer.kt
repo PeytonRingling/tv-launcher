@@ -28,9 +28,16 @@ interface UpdateHooks {
   fun statusJson(): String
 }
 
+/** Hooks for the "Add API.Bible key" mode: the phone pastes the key, the TV checks it once and stores it privately. */
+interface KeyHooks {
+  /** Called on the server thread with the pasted key; returns (accepted, message for the phone). Must never log the key. */
+  fun onKey(key: String): Pair<Boolean, String>
+}
+
 class PhotoServer private constructor(
   private val ctx: Context, port: Int, val pin: String,
   private val onSaved: (batch: String?, total: Int) -> Unit, private val update: UpdateHooks? = null,
+  private val keyHooks: KeyHooks? = null,
 ) : NanoHTTPD(port) {
   private var badPins = 0
   private val lock = Any()
@@ -46,6 +53,11 @@ class PhotoServer private constructor(
       if (parts.firstOrNull().isNullOrEmpty()) return html(PIN_PAGE)
       badPins++
       return text(Response.Status.FORBIDDEN, "Wrong code")
+    }
+    if (keyHooks != null) return when {
+      parts.size == 1 && s.method == Method.GET -> html(KEY_PAGE.replace("{{PIN}}", pin))
+      parts.getOrNull(1) == "key" && s.method == Method.POST -> receiveKey(s, keyHooks)
+      else -> text(Response.Status.NOT_FOUND, "Not found")
     }
     if (update != null) return when {
       parts.size == 1 && s.method == Method.GET -> html(UPDATE_PAGE.replace("{{PIN}}", pin))
@@ -108,6 +120,28 @@ class PhotoServer private constructor(
     } finally { synchronized(lock) { receiving = false } }
   }
 
+  private var keyTries = 0
+
+  /** Reads the pasted key (tiny text body, never stored by the server, never echoed back) and hands it to the TV. */
+  private fun receiveKey(s: IHTTPSession, h: KeyHooks): Response {
+    val len = s.headers["content-length"]?.toIntOrNull() ?: return json(err("Nothing was sent. Paste the key and try again."))
+    // Unread body: close the connection so the leftover bytes can't be parsed as the next request.
+    if (len <= 0 || len > 512) return json(err("That's not an API.Bible key (wrong length).")).apply { closeConnection(true) }
+    synchronized(lock) {
+      if (receiving) return json(err("The TV is still checking the last key."))
+      if (keyTries >= 10) return json(err("Too many tries. Reopen the screen on the TV for a new code."))
+      receiving = true; keyTries++
+    }
+    try {
+      val buf = ByteArray(len); var read = 0; val inp = s.inputStream
+      while (read < len) { val n = inp.read(buf, read, len - read); if (n < 0) break; read += n }
+      val key = String(buf, 0, read, Charsets.UTF_8).trim()
+      buf.fill(0)
+      val (ok, msg) = h.onKey(key)
+      return json("{\"ok\":$ok,\"message\":${q(msg)}}")
+    } finally { synchronized(lock) { receiving = false } }
+  }
+
   private fun err(m: String) = "{\"ok\":false,\"message\":${q(m)}}"
   private fun json(t: String) = newFixedLengthResponse(Response.Status.OK, "application/json; charset=utf-8", t).apply { addHeader("Cache-Control", "no-store") }
 
@@ -117,11 +151,12 @@ class PhotoServer private constructor(
   companion object {
     fun start(ctx: Context, onSaved: (String?, Int) -> Unit): PhotoServer? = startInternal(ctx, onSaved, null)
     fun startUpdate(ctx: Context, hooks: UpdateHooks): PhotoServer? = startInternal(ctx, { _, _ -> }, hooks)
+    fun startKey(ctx: Context, hooks: KeyHooks): PhotoServer? = startInternal(ctx, { _, _ -> }, null, hooks)
 
-    private fun startInternal(ctx: Context, onSaved: (String?, Int) -> Unit, hooks: UpdateHooks?): PhotoServer? {
+    private fun startInternal(ctx: Context, onSaved: (String?, Int) -> Unit, hooks: UpdateHooks?, keyHooks: KeyHooks? = null): PhotoServer? {
       val pin = (SecureRandom().nextInt(900_000) + 100_000).toString()
       for (port in 8765..8775) {
-        try { return PhotoServer(ctx.applicationContext, port, pin, onSaved, hooks).also { it.start(SOCKET_READ_TIMEOUT, true) } } catch (_: Exception) {}
+        try { return PhotoServer(ctx.applicationContext, port, pin, onSaved, hooks, keyHooks).also { it.start(SOCKET_READ_TIMEOUT, true) } } catch (_: Exception) {}
       }
       return null
     }
@@ -183,6 +218,22 @@ f.onchange=()=>{const file=f.files[0];f.value='';if(!file)return;
   x.onload=()=>{try{const r=JSON.parse(x.responseText);show(r.message,r.ok?'ok':'err');if(r.ok)poll();}catch(e){show('Unexpected reply from the TV.','err');}};
   x.onerror=()=>show('Couldn\'t reach the TV. Same Wi-Fi?','err');
   show('Sending…');x.send(file);};
+</script></body></html>"""
+
+    private const val KEY_PAGE = """<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>API.Bible key</title><style>$CSS
+input.key{width:100%;font-size:17px;padding:14px;border-radius:14px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#fff;margin-bottom:12px}
+.ph{font-size:15px;margin-top:12px;color:#f4f5fa}.ph.err{color:#ffb4a8}.ph.ok{color:#7be0a0}</style></head>
+<body><div class=w><h1>API.Bible key</h1><p>Paste the API key from your app on <b>api.bible</b> (free Starter plan, with the NIV added). The TV checks it once, then keeps it only on the TV. It isn't shown again or sent anywhere except API.Bible.</p>
+<div class=card><input class=key id=k type=password autocomplete=off autocapitalize=off autocorrect=off spellcheck=false placeholder="API key">
+<button class=btn id=s>Save to TV</button><div class=ph id=ph>Waiting for a key.</div></div></div>
+<script>
+const PIN='{{PIN}}',k=document.getElementById('k'),s=document.getElementById('s'),ph=document.getElementById('ph');
+function show(t,cls){ph.textContent=t;ph.className='ph'+(cls?' '+cls:'');}
+s.onclick=async()=>{const v=k.value.trim();if(!v){show('Paste the key first.','err');return;}
+  s.disabled=true;show('Checking with API.Bible…');
+  try{const r=await fetch('/'+PIN+'/key',{method:'POST',headers:{'Content-Type':'text/plain'},body:v});const j=await r.json();show(j.message,j.ok?'ok':'err');if(j.ok)k.value='';}
+  catch(e){show('Couldn\'t reach the TV. Same Wi-Fi?','err');}
+  s.disabled=false;};
 </script></body></html>"""
 
     private const val PIN_PAGE = """<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>TV Launcher</title><style>$CSS</style></head>

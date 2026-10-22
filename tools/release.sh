@@ -4,6 +4,10 @@
 #   tools/release.sh <versionCode> <versionName>            # build + verify + print the gh command (dry run)
 #   tools/release.sh <versionCode> <versionName> --publish  # ...and run `gh release create` (needs Peyton's OK)
 #
+# PUBLIC build: the API.Bible key seed is forced empty (-PAPI_BIBLE_KEY=), and the APK is scanned for the key from the
+# API_BIBLE_KEY env var / ~/.gradle/gradle.properties and for Scripture text. The private, key-seeded build for Drive is
+# tools/build-private.sh and never goes to GitHub.
+#
 # Naming convention (the app depends on it, see RELEASING.md):
 #   tag  v<versionName>                          e.g. v4.3
 #   one asset  tv-launcher-v<versionName>-vc<versionCode>.apk   e.g. tv-launcher-v4.3-vc8.apk
@@ -18,10 +22,12 @@ TAG="v$VN"; NAME="tv-launcher-v$VN-vc$VC.apk"; OUT="release/$NAME"
 [[ "$VC" =~ ^[0-9]+$ ]] || { echo "versionCode must be a number" >&2; exit 1; }
 [[ "$VN" =~ ^[0-9][0-9A-Za-z.]*$ ]] || { echo "versionName must look like 4.3" >&2; exit 1; }
 
-./gradlew -q assembleRelease -Pvc="$VC" -Pvn="$VN"
+# Never from a gradle.properties in the repo (it's public).
+if grep -qs 'API_BIBLE_KEY' gradle.properties app/gradle.properties local.properties; then echo "FAIL: API_BIBLE_KEY must not be in the repo's properties files" >&2; exit 1; fi
+./gradlew -q assembleRelease -Pvc="$VC" -Pvn="$VN" -PAPI_BIBLE_KEY= -Ptvlauncher.private=false
 mkdir -p release && cp app/build/outputs/apk/release/app-release.apk "$OUT"
 
-badging=$("$BT/aapt" dump badging "$OUT" | head -1)
+badging=$("$BT/aapt" dump badging "$OUT" | sed -n 1p)
 echo "$badging"
 [[ "$badging" == *"name='$PKG' versionCode='$VC' versionName='$VN'"* ]] || { echo "FAIL: package/version mismatch" >&2; exit 1; }
 certs=$("$BT/apksigner" verify --print-certs "$OUT" | grep -o 'SHA-256 digest: [0-9a-f]*' | awk '{print $3}' | sort -u)
@@ -44,7 +50,21 @@ for n in "${needles[@]}"; do
   [[ "$n" == America/* ]] && continue   # IANA zone names appear in the platform/ICU data of any app; not a location leak
   if grep -rqaF -- "$n" "$tmp"; then rm -rf "$tmp"; echo "FAIL: APK contains a compiled-in location value (${n:0:3}…)" >&2; exit 1; fi
 done
-rm -rf "$tmp"; echo "location check: no compiled-in location (${#needles[@]} values checked)"
+echo "location check: no compiled-in location (${#needles[@]} values checked)"
+
+# API.Bible key guard: the public APK must not contain the key (values from env and ~/.gradle, never printed).
+keys=()
+[[ -n "${API_BIBLE_KEY:-}" ]] && keys+=("$API_BIBLE_KEY")
+while IFS='=' read -r k v; do v="${v//[[:space:]]/}"; [[ -n "$v" ]] && keys+=("$v"); done < <(grep -hs '^API_BIBLE_KEY=' ~/.gradle/gradle.properties || true)
+for k in "${keys[@]}"; do
+  if grep -rqaF -- "$k" "$tmp"; then rm -rf "$tmp"; echo "FAIL: the public APK contains your API.Bible key. Don't publish it." >&2; exit 1; fi
+done
+# The seed field must be empty in the public build (checked in the BuildConfig this APK was compiled from).
+bc=$(find app/build/generated/source/buildConfig/release -name BuildConfig.java | sed -n 1p)
+grep -q 'String API_BIBLE_SEED = "";' "$bc" || { rm -rf "$tmp"; echo "FAIL: BuildConfig.API_BIBLE_SEED isn't empty in the public build" >&2; exit 1; }
+# No Scripture text: the app ships verse references only (VerseRefs.kt); text comes from API.Bible at runtime.
+if strings -n 24 "$tmp"/classes*.dex | grep -qE '\b(LORD|Jesus|God)\b'; then rm -rf "$tmp"; echo "FAIL: the APK seems to contain Scripture text" >&2; exit 1; fi
+rm -rf "$tmp"; echo "API.Bible check: no key (${#keys[@]} value(s) checked), empty seed, no Scripture text"
 
 if [[ "$PUBLISH" == "--publish" ]]; then
   [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || { echo "FAIL: HEAD isn't origin/main; merge and pull first" >&2; exit 1; }

@@ -26,6 +26,7 @@ enum class HomeCard(val title: String, val blurb: String) {
   TOGGLES("Quick buttons", "Ambient, Settings, Inputs"),
   COUNTDOWN("Countdown", "Days until a date you set"),
   NOTE("Note", "A short message you type"),
+  VERSE("Verse of the day", "NIV via API.Bible (needs your key)"),
 }
 
 enum class ClockStyle(val title: String) {

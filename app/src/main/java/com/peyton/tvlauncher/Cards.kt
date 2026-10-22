@@ -1,5 +1,6 @@
 package com.peyton.tvlauncher
 
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -33,6 +34,7 @@ import java.util.Locale
 
 private val CardDark = Color(0xFF101115)
 const val NO_ZIP = "Set your ZIP code in Settings › Weather location to see the forecast."
+const val NO_VERSE_KEY = "Add your API.Bible key in Settings."
 private val CardShape = RoundedCornerShape(24.dp)
 
 /** Vertical stack of glass cards for one slot. */
@@ -57,6 +59,7 @@ fun HomeCardView(card: HomeCard, st: LauncherState, actions: Actions, canFocus: 
     HomeCard.TOGGLES -> TogglesCard(st, actions, canFocus, width)
     HomeCard.COUNTDOWN -> CountdownCard(st.countdown, width)
     HomeCard.NOTE -> NoteCard(st.note, width)
+    HomeCard.VERSE -> VerseCard(st, actions, width)
   }
 }
 
@@ -269,5 +272,45 @@ private fun NoteCard(text: String, width: Dp) {
     CardTitle("NOTE")
     T(text.ifBlank { "Write a note in Settings → Home cards." }, if (text.length < 40) 18.sp else 14.sp, weight = if (text.isBlank()) FontWeight.Normal else FontWeight.Medium,
       color = if (text.isBlank()) Ink.copy(alpha = 0.8f) else Ink, shadow = TextShadow, maxLines = 5)
+  }
+}
+
+/** What the verse card shows; equal values never animate, so a refresh that returns the same text changes nothing on screen. */
+private data class VerseShown(val reference: String, val text: String, val copyright: String, val abbr: String)
+
+/**
+ * Verse of the day. The cached verse is in [LauncherState.verse] before the first frame (no pop-in); when the day or the
+ * text changes it crossfades. Plain, non-focusable text: nothing to select, copy or share.
+ */
+@Composable
+private fun VerseCard(st: LauncherState, actions: Actions, width: Dp) {
+  val v = st.verse
+  // FUMS: report each time the verse is on screen (new verse, or the launcher came back to the foreground).
+  val token = v?.fums
+  LaunchedEffect(token, st.verseSession) { if (token != null) actions.reportFums(token) }
+  val view: Any = when {
+    v != null -> VerseShown(v.reference, v.text, v.copyright, st.verseAbbr)
+    !st.verseKey -> NO_VERSE_KEY
+    else -> (st.verseStatus ?: VerseStatus.LOADING).message
+  }
+  androidx.compose.animation.AnimatedContent(view, transitionSpec = {
+    (androidx.compose.animation.fadeIn(tween(520, delayMillis = 120)) togetherWith androidx.compose.animation.fadeOut(tween(260)))
+      .using(androidx.compose.animation.SizeTransform(clip = false) { _, _ -> tween(420) })
+  }, label = "verse") { s ->
+    if (s is VerseShown) VerseBody(s, width) else Placeholder("VERSE OF THE DAY", s as String, width)
+  }
+}
+
+@Composable
+private fun VerseBody(s: VerseShown, width: Dp) {
+  Column(Modifier.width(width).frosted(CardShape).padding(horizontal = 18.dp, vertical = 15.dp)) {
+    CardTitle("VERSE OF THE DAY")
+    val n = s.text.length
+    // Sized to fit without truncation: everything up to VerseText.MAX_CHARS fits at 13sp; longer (rare, last resort) at 12sp.
+    val size = when { n <= 90 -> 16.sp; n <= 150 -> 14.5.sp; n <= VerseText.MAX_CHARS -> 13.sp; else -> 12.sp }
+    T(s.text, size, weight = FontWeight.Medium, shadow = TextShadow, maxLines = 16)
+    T("${s.reference} · ${s.abbr}", 12.sp, Modifier.padding(top = 8.dp), weight = FontWeight.SemiBold, color = Ink.copy(alpha = 0.92f), shadow = TextShadow, maxLines = 2)
+    if (s.copyright.isNotEmpty()) T(s.copyright, 9.5.sp, Modifier.padding(top = 6.dp), color = Ink.copy(alpha = 0.7f), shadow = TextShadow, maxLines = 8)
+    T("API.Bible · api.bible", 9.5.sp, Modifier.padding(top = 4.dp), weight = FontWeight.SemiBold, color = Ink.copy(alpha = 0.78f), shadow = TextShadow)
   }
 }

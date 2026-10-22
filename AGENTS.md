@@ -22,6 +22,9 @@ Needs JDK 17+ and an Android SDK with platform 34 and build-tools 34.0.0 (`local
   photos). The weather location is entered on the TV as a ZIP code (Location.kt); never compile a location into the APK.
 * Animations must stay smooth. Peyton is picky: the drawer slides as one solid layer over a pre-blurred background, nothing
   pops in. Don't add per-frame allocations or offscreen alpha layers on large surfaces.
+* **API.Bible key** (verse of the day): never in the repo, logs, reports or a public APK. Public builds go through
+  `tools/release.sh` (empty seed + key scan); the key-seeded build is `tools/build-private.sh` → `release/private/` (Drive only).
+  Never commit NIV text: tests use public-domain WEB fixtures (`app/src/test/resources/apibible/`); only references ship.
 * The launcher never scans the TV's shared storage. Phone photo upload / updates run only on a LAN-only, PIN-protected server
   while that screen is open.
 

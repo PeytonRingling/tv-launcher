@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity(), Actions {
           st.inputsOpen -> st.inputsOpen = false
           st.allApps -> st.allApps = false
           st.moving != null -> st.moving = null
-          st.screen in setOf(Screen.LAYOUT, Screen.CARDS, Screen.CLOCK, Screen.PHONE_UPLOAD, Screen.MY_PHOTOS, Screen.UPDATE, Screen.WEATHER_ZIP) -> st.screen = Screen.SETTINGS
+          st.screen in setOf(Screen.LAYOUT, Screen.CARDS, Screen.CLOCK, Screen.PHONE_UPLOAD, Screen.MY_PHOTOS, Screen.UPDATE, Screen.WEATHER_ZIP, Screen.VERSE_KEY) -> st.screen = Screen.SETTINGS
           st.screen != Screen.HOME -> st.screen = Screen.HOME
           else -> st.homeTick++ // a launcher never "exits"; BACK just returns to the top
         }
@@ -103,6 +103,31 @@ class MainActivity : ComponentActivity(), Actions {
             if (stale) withContext(Dispatchers.IO) { WeatherApi.fetchJson(p) }?.let { if (st.place == p) st.setWeatherJson(it) }
             delay(30 * 60_000L)
           }
+        }
+      }
+    }
+    // Private builds only: move a compiled-in API.Bible key into private storage once (retries on network errors).
+    if (BuildConfig.API_BIBLE_SEED.isNotEmpty()) lifecycleScope.launch {
+      while (!st.verseKey) {
+        val r = withContext(Dispatchers.IO) { VerseSeed.migrate(Prefs(this@MainActivity).verse, Prefs(this@MainActivity).sp, BuildConfig.API_BIBLE_SEED, installedVc()) }
+        if (r == VerseSeed.Result.SAVED) { val s = Prefs(this@MainActivity).verse; st.verseKey = true; st.verseAbbr = s.abbr; st.verseStatus = null; syncVerse() }
+        if (r != VerseSeed.Result.RETRY_LATER) break
+        delay(15 * 60_000L)
+      }
+    }
+    // Verse of the day: show the cached day at once; sync today + 14 days every 6 h (15 min while today is missing).
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        st.verseSession++; fumsSession = java.util.UUID.randomUUID().toString(); fumsSent.clear()
+        var lastPass = 0L; var lastDay: java.time.LocalDate? = null
+        while (true) {
+          val today = java.time.LocalDate.now(); val now = System.currentTimeMillis()
+          val store = Prefs(this@MainActivity).verse
+          val v = withContext(Dispatchers.IO) { store.get(today, now) }
+          if (v != st.verse) st.verse = v
+          val every = if (st.verse == null) 15 * 60_000L else 6 * 60 * 60_000L
+          if (st.verseKey && (today != lastDay || now - lastPass > every)) { syncVerse(); lastPass = now; lastDay = today }
+          delay(60_000)
         }
       }
     }
@@ -386,10 +411,12 @@ class MainActivity : ComponentActivity(), Actions {
   override fun onStart() {
     super.onStart()
     if (st.screen == Screen.PHONE_UPLOAD) startPhotoServer()
+    if (st.screen == Screen.VERSE_KEY) startKeyServer()
   }
 
   override fun onStop() {
     stopPhotoServerNow()   // never leave the server running in the background
+    keyGen++; keyServer?.stop(); keyServer = null
     // Keep the update server only while the system install prompt is covering us, so the phone sees the result.
     if (st.update?.phase != UpdatePhase.CONFIRM && st.update?.phase != UpdatePhase.INSTALLING) stopUpdateServer()
     super.onStop()
@@ -457,6 +484,97 @@ class MainActivity : ComponentActivity(), Actions {
         is ZipResult.Failed -> st.zipStatus = r.reason   // the old location stays as it was
       }
     }
+  }
+
+  // ------------------------------------------------------------ verse of the day (API.Bible)
+
+  private var verseJob: Job? = null
+  private var fumsSession = java.util.UUID.randomUUID().toString()
+  private val fumsSent = java.util.Collections.synchronizedSet(HashSet<String>())
+
+  /** One sync pass (purge + fetch what's missing). Errors keep whatever is cached and show on the card only if today is missing. */
+  internal fun syncVerse(): Job? {
+    if (verseJob?.isActive == true) return verseJob
+    val store = Prefs(this).verse
+    val cred = store.cred ?: return null
+    if (st.verse == null) st.verseStatus = null   // "Getting today's verse…" while the first pass runs
+    verseJob = lifecycleScope.launch {
+      val err = withContext(Dispatchers.IO) { VerseSync.run(store, cred, java.time.LocalDate.now()) }
+      st.verseStatus = err
+      st.verse = withContext(Dispatchers.IO) { store.get(java.time.LocalDate.now()) }
+    }
+    return verseJob
+  }
+
+  override fun reportFums(token: String) {
+    if (!fumsSent.add(token)) return
+    val dId = Prefs(this).verse.deviceId; val sId = fumsSession
+    lifecycleScope.launch(Dispatchers.IO) { if (!VerseApi.reportFums(token, dId, sId)) fumsSent.remove(token) }
+  }
+
+  override fun removeVerseKey() {
+    verseJob?.cancel()
+    Prefs(this).verse.clearAll()
+    VerseSeed.turnOff(Prefs(this).sp)
+    st.verseKey = false; st.verse = null; st.verseStatus = null
+  }
+
+  private var keyServer: PhotoServer? = null
+  private var keyStarting = false
+  private var keyGen = 0
+
+  private fun setKeyUi(f: (KeyUi) -> KeyUi) {
+    val run = { st.keyUi = f(st.keyUi ?: KeyUi()) }
+    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run() else runOnUiThread(run)
+  }
+
+  internal val keyHooks = object : KeyHooks {
+    /** Server thread. Validates once against API.Bible (finds the NIV id), then stores key + id privately. Never logs the key. */
+    override fun onKey(key: String): Pair<Boolean, String> {
+      setKeyUi { it.copy(phase = KeyPhase.CHECKING, message = "Checking the key with API.Bible…") }
+      return when (val r = VerseApi.validate(key)) {
+        is KeyCheck.Valid -> {
+          val store = Prefs(this@MainActivity).verse
+          val old = store.cred
+          store.cred = VerseCred(key, r.bibleId, r.abbr)
+          if (old != null && old.bibleId != r.bibleId) store.clearVerses()
+          val msg = "Saved. ${r.name} (${r.abbr}) found; today's verse is on its way."
+          runOnUiThread {
+            st.verseKey = true; st.verseAbbr = r.abbr; st.verseStatus = null
+            setKeyUi { it.copy(phase = KeyPhase.SAVED, message = msg) }
+            verseJob?.cancel(); syncVerse()
+          }
+          true to msg
+        }
+        is KeyCheck.Invalid -> { setKeyUi { it.copy(phase = KeyPhase.ERROR, message = r.reason) }; false to r.reason }
+      }
+    }
+  }
+
+  override fun startKeyServer() {
+    if (keyServer != null || keyStarting) return
+    keyStarting = true
+    val gen = keyGen
+    lifecycleScope.launch(kotlinx.coroutines.NonCancellable) {
+      val srv = withContext(Dispatchers.IO) { PhotoServer.startKey(this@MainActivity, keyHooks) }
+      keyStarting = false
+      if (gen != keyGen || st.screen != Screen.VERSE_KEY) { withContext(Dispatchers.IO) { srv?.stop() }; return@launch }
+      keyServer = srv
+      val ip = withContext(Dispatchers.IO) { PhotoServer.lanAddress() }
+      setKeyUi {
+        when {
+          srv == null -> it.copy(url = null, serverError = "Couldn't start sharing on this TV (ports 8765-8775 busy).")
+          ip == null -> { srv.stop(); keyServer = null; it.copy(url = null, serverError = "The TV isn't connected to a network.") }
+          else -> it.copy(url = "http://$ip:${srv.listeningPort}/${srv.pin}", pin = srv.pin, serverError = null)
+        }
+      }
+    }
+  }
+
+  override fun stopKeyServer() {
+    keyGen++
+    keyServer?.stop(); keyServer = null
+    st.keyUi = null
   }
 
   // ------------------------------------------------------------ self-update from GitHub Releases

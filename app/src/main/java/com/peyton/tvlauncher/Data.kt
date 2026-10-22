@@ -119,6 +119,8 @@ object Apps {
 
 class Prefs(ctx: Context) {
   internal val sp = ctx.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+  /** Verse of the day key + cache live in their own private prefs files (excluded from backups), not in "launcher". */
+  internal val verse = VerseStore(ctx)
   var favorites: List<String>
     get() = sp.getString("fav", "")!!.split(',').filter { it.isNotBlank() }
     set(v) = sp.edit().putString("fav", v.joinToString(",")).apply()
@@ -317,7 +319,13 @@ object Photos {
 
 // ---------------------------------------------------------------- UI state
 
-enum class Screen { HOME, SETTINGS, PHONE_UPLOAD, MY_PHOTOS, UPDATE, LAYOUT, CARDS, CLOCK, WEATHER_ZIP }
+enum class Screen { HOME, SETTINGS, PHONE_UPLOAD, MY_PHOTOS, UPDATE, LAYOUT, CARDS, CLOCK, WEATHER_ZIP, VERSE_KEY }
+
+enum class KeyPhase { WAITING, CHECKING, SAVED, ERROR }
+
+/** Live info for the "Add API.Bible key" screen. Never holds the key itself. */
+data class KeyUi(val url: String? = null, val pin: String = "", val phase: KeyPhase = KeyPhase.WAITING,
+  val message: String = "Waiting for the key from your phone.", val serverError: String? = null)
 
 /** Live info for the "Add photos from phone" screen. */
 data class UploadUi(val url: String?, val pin: String, val received: Int = 0, val error: String? = null,
@@ -338,6 +346,15 @@ class LauncherState(private val prefs: Prefs) {
   var ambient by mutableStateOf(false)
   var place by mutableStateOf(prefs.weatherPlace)
   var weather by mutableStateOf(if (prefs.weatherPlace != null) WeatherApi.parse(prefs.weatherJson) else null)
+  // ---- Verse of the day (API.Bible). Today's cached verse is read before the first frame, so the card never pops in.
+  var verseKey by mutableStateOf(prefs.verse.hasKey)
+  var verseAbbr by mutableStateOf(prefs.verse.abbr)
+  var verse by mutableStateOf(prefs.verse.get(java.time.LocalDate.now()))
+  /** Last sync error (null = fine). Shown on the card only when there's no verse for today. */
+  var verseStatus by mutableStateOf<VerseStatus?>(null)
+  /** Bumped on every foreground session; the card re-reports FUMS for the verse it shows. */
+  var verseSession by mutableIntStateOf(0)
+  var keyUi by mutableStateOf<KeyUi?>(null)
   /** ZIP picker status: null = idle, "…" while looking up, otherwise an error to show (the old place is kept). */
   var zipStatus by mutableStateOf<String?>(null)
   var photos by mutableStateOf(listOf<Photo>())

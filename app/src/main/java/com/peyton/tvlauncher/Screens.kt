@@ -63,6 +63,13 @@ interface Actions : AmbientSource {
   /** Looks up the ZIP and, if it resolves, saves it as the weather location. */
   fun setZip(zip: String) {}
   fun installFromGitHub() {}
+  /** Same LAN server in "API.Bible key" mode; runs only while that screen is open. */
+  fun startKeyServer() {}
+  fun stopKeyServer() {}
+  /** Forgets the key and deletes every cached verse. */
+  fun removeVerseKey() {}
+  /** FUMS report for a verse that is on screen (deduplicated per foreground session). */
+  fun reportFums(token: String) {}
   fun deletePhoto(p: Photo)
   fun deleteAllPhotos()
   /** Blocking; called off the main thread. */
@@ -82,6 +89,7 @@ fun LauncherRoot(st: LauncherState, actions: Actions) {
       Screen.CARDS -> CardSettings(st, actions)
       Screen.CLOCK -> ClockSettings(st, actions)
       Screen.WEATHER_ZIP -> ZipScreen(st, actions)
+      Screen.VERSE_KEY -> VerseKeyScreen(st, actions)
     }
     val a by animateFloatAsState(if (st.ambient) 1f else 0f, tween(if (st.ambient) 1600 else 350), label = "amb")
     if (st.ambient || a > 0.01f) Box(Modifier.fillMaxSize().graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.ModulateAlpha; alpha = a }) {
@@ -100,6 +108,7 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
   val idleOpts = listOf(0, 1, 2, 5, 10, 15, 30, 60)
   fun idleLabel(m: Int) = if (m == 0) "Never" else if (m == 60) "1 hour" else "$m minute${if (m == 1) "" else "s"}"
   fun cycleIdle(d: Int) { val i = idleOpts.indexOf(st.idleMinutes).coerceAtLeast(0); st.setIdle(idleOpts[(i + d + idleOpts.size) % idleOpts.size]) }
+  var confirmRemoveKey by remember { mutableStateOf(false) }
   Box(Modifier.fillMaxSize()) {
     Backdrop(st.backdrop)
     Row(Modifier.fillMaxSize().padding(horizontal = 64.dp, vertical = 48.dp)) {
@@ -149,6 +158,17 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
         SettingRow("Clock", if (st.use24h) "24-hour" else "12-hour", { st.set24h(!st.use24h) }, { st.set24h(!st.use24h) }, { st.set24h(!st.use24h) })
         SettingRow("Weather in ambient", if (st.showWeather) "On" else "Off", { st.changeShowWeather(!st.showWeather) }, { st.changeShowWeather(!st.showWeather) }, { st.changeShowWeather(!st.showWeather) })
         SettingRow("Temperature", if (st.celsius) "°C" else "°F", { st.changeCelsius(!st.celsius) }, { st.changeCelsius(!st.celsius) }, { st.changeCelsius(!st.celsius) })
+        Section("Verse of the day")
+        val verseSlot = st.cards[HomeCard.VERSE] ?: CardSlot.OFF
+        fun cycleVerse(d: Int) { val sl = CardSlot.values(); val m = LinkedHashMap(st.cards); m[HomeCard.VERSE] = sl[(sl.indexOf(verseSlot) + d + sl.size) % sl.size]; st.changeCards(m) }
+        SettingRow(if (st.verseKey) "Replace API.Bible key" else "Add API.Bible key", if (st.verseKey) "Saved · ${st.verseAbbr}" else "Scan QR", { st.keyUi = null; st.screen = Screen.VERSE_KEY })
+        SettingRow("Show on home", verseSlot.title, { cycleVerse(1) }, { cycleVerse(-1) }, { cycleVerse(1) })
+        if (st.verseKey) SettingRow("Remove API.Bible key", null, { confirmRemoveKey = true })
+        T(when {
+          !st.verseKey -> "NIV text from API.Bible with your own free key (api.bible). Nothing is bundled in the app."
+          st.verse != null -> "Today: ${st.verse!!.reference} · ${st.verseAbbr}. Kept on this TV for at most 30 days."
+          else -> (st.verseStatus ?: VerseStatus.LOADING).message
+        }, 13.sp, Modifier.padding(start = 20.dp, top = 6.dp), color = if (st.verseStatus != null && st.verse == null) Color(0xFFFFB4A8) else Ink.copy(alpha = 0.62f), maxLines = 2)
         Section("Apps")
         val hidden = st.apps.filter { it.pkg in st.hidden }
         if (hidden.isEmpty()) SettingRow("Hidden apps", "None", {})
@@ -161,6 +181,10 @@ fun SettingsScreen(st: LauncherState, actions: Actions) {
         Spacer(Modifier.height(40.dp))
       }
     }
+    if (confirmRemoveKey) OverlayMenu("Remove the API.Bible key?", "Cached verses are deleted from the TV too", null, listOf(
+      MenuItem("Remove", Icons.Filled.Delete) { actions.removeVerseKey(); confirmRemoveKey = false },
+      MenuItem("Cancel", Icons.Filled.ArrowBack) { confirmRemoveKey = false },
+    )) { confirmRemoveKey = false }
   }
 }
 
@@ -486,5 +510,52 @@ private fun ZipDigit(d: Int, selected: Boolean) {
       }
     }
     T("▼", 14.sp, Modifier.graphicsLayer { alpha = k }, color = Ink.copy(alpha = 0.8f))
+  }
+}
+
+// ================================================================= VERSE OF THE DAY: API.BIBLE KEY FROM PHONE
+
+/** QR + PIN page for pasting the API.Bible key on the phone. The LAN server runs only while this screen is open. */
+@Composable
+fun VerseKeyScreen(st: LauncherState, actions: Actions) {
+  DisposableEffect(Unit) { actions.startKeyServer(); onDispose { actions.stopKeyServer() } }
+  val k = st.keyUi ?: KeyUi()
+  val done = remember { FocusRequester() }
+  LaunchedEffect(Unit) { delay(50); tryFocus(done) }
+  val qr = remember(k.url) { k.url?.let { PhotoServer.qr(it, 480).asImageBitmap() } }
+  val color = when (k.phase) { KeyPhase.ERROR -> Color(0xFFFFB4A8); KeyPhase.SAVED -> Color(0xFF7BE0A0); else -> Ink }
+  Box(Modifier.fillMaxSize()) {
+    Backdrop(st.backdrop)
+    Row(Modifier.fillMaxSize().padding(horizontal = 72.dp, vertical = 36.dp), verticalAlignment = Alignment.CenterVertically) {
+      Column(Modifier.weight(1f)) {
+        T(if (st.verseKey) "Replace your API.Bible key" else "Add your API.Bible key", 34.sp, weight = FontWeight.Light, spacing = (-0.5).sp, maxLines = 2)
+        Spacer(Modifier.height(12.dp))
+        Step("1", "On api.bible: create a free Starter app (non-commercial) and add the NIV.")
+        Step("2", "Connect your phone to the same Wi-Fi as the TV and scan the code.")
+        Step("3", "Paste the API key and press Save. The TV checks it once.")
+        Spacer(Modifier.height(12.dp))
+        if (k.url != null) {
+          T("Or open in a browser", 13.sp, color = Ink.copy(alpha = 0.65f), weight = FontWeight.SemiBold, spacing = 1.sp)
+          Spacer(Modifier.height(4.dp))
+          T(k.url, 24.sp, weight = FontWeight.Medium)
+          Spacer(Modifier.height(4.dp))
+          T("Code  ${k.pin}", 16.sp, color = Ink.copy(alpha = 0.75f), spacing = 2.sp)
+        } else T(k.serverError ?: "Starting…", 18.sp, color = if (k.serverError != null) Color(0xFFFFB4A8) else Ink.copy(alpha = 0.75f), maxLines = 3)
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+          Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(if (k.phase == KeyPhase.WAITING) (if (k.url != null) Color(0xFF7BE0A0) else Color(0x66FFFFFF)) else color))
+          Spacer(Modifier.width(10.dp))
+          T(k.message, 16.sp, color = color, weight = FontWeight.Medium, maxLines = 2)
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(Modifier.width(200.dp)) { SettingRow("Done", null, { st.screen = Screen.SETTINGS }, fr = done) }
+        Spacer(Modifier.height(8.dp))
+        T("The key is stored only on this TV (never in backups) and sent only to API.Bible. Sharing stops when you leave this screen.", 13.sp, color = Ink.copy(alpha = 0.6f), maxLines = 2)
+      }
+      Spacer(Modifier.width(48.dp))
+      Box(Modifier.size(320.dp).clip(RoundedCornerShape(28.dp)).background(Color.White).padding(18.dp), Alignment.Center) {
+        if (qr != null) Image(qr, null, Modifier.fillMaxSize(), filterQuality = FilterQuality.None)
+      }
+    }
   }
 }

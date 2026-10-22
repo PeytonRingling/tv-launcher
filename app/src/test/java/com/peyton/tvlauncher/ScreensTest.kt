@@ -469,6 +469,53 @@ class ScreensTest {
     rule.onRoot().captureRoboImage("../screens/updater/Z6_settings_weather_location.png")
   }
   @Test fun zipCardWithPlace() = shot("../updater/Z7_home_weather_card", state()) { it.place = zipPlace }
+
+  // ======================= Verse of the day (API.Bible) =======================
+  // Render fixtures use public-domain World English Bible text labelled WEB: no NIV text is stored in this repo.
+  private val webShort = Verse("2026-10-21", "PSA.46.10", "Psalms 46:10", "Be still, and know that I am God. I will be exalted among the nations. I will be exalted in the earth.",
+    "Render fixture: World English Bible (public domain). On the TV this is the copyright line API.Bible returns.", "fixture-fums", 0L)
+  private val webLong = Verse("2026-10-21", "ISA.41.10", "Isaiah 41:10", "Don't you be afraid, for I am with you. Don't be dismayed, for I am your God. I will strengthen you. Yes, I will help you. Yes, I will uphold you with the right hand of my righteousness.",
+    "Render fixture: World English Bible (public domain). On the TV this line is the full copyright notice API.Bible returns with each verse, which can run to a few lines.", "fixture-fums", 0L)
+  private fun verseState(v: Verse?, key: Boolean, wall: String = "canyon") = state(wall).apply {
+    verseKey = key; verseAbbr = "WEB"; verse = v
+    changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, HomeCard.WEATHER to CardSlot.RIGHT))
+  }
+  @Test fun verseShort() = shot("../verse/V1_home_verse_card_short", verseState(webShort, true))
+  @Test fun verseLong() = shot("../verse/V2_home_verse_card_long", verseState(webLong, true, "fjord"))
+  @Test fun versePrompt() = shot("../verse/V3_home_verse_prompt_no_key", verseState(null, false))
+  @Test fun verseKeyScreen() = shot("../verse/V4_add_key_qr_screen", verseState(null, false)) {
+    it.keyUi = KeyUi("http://192.168.1.42:8765/482913", "482913"); it.screen = Screen.VERSE_KEY }
+  @Test fun verseKeySaved() = shot("../verse/V5_key_saved", verseState(null, true)) {
+    it.verseAbbr = "NIV"; it.keyUi = KeyUi("http://192.168.1.42:8765/482913", "482913", KeyPhase.SAVED, "Saved. New International Version (NIV) found; today's verse is on its way."); it.screen = Screen.VERSE_KEY }
+  @Test fun verseKeyError() = shot("../verse/V6_key_rejected", verseState(null, false)) {
+    it.keyUi = KeyUi("http://192.168.1.42:8765/482913", "482913", KeyPhase.ERROR, "API.Bible didn't accept this key. Copy it again from your API.Bible dashboard."); it.screen = Screen.VERSE_KEY }
+  @Test fun verseErrorCard() = shot("../verse/V7_home_verse_invalid_key", verseState(null, true)) { it.verseStatus = VerseStatus.INVALID_KEY }
+  @Test fun verseSideRail() = shot("../verse/V8_side_rail_verse_card", verseState(webLong, true, "highlands")) { it.changeLayout(HomeLayout.SIDE_RAIL) }
+  @Test fun verseSettings() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    st.screen = Screen.SETTINGS
+    rule.mainClock.advanceTimeBy(1500); Thread.sleep(300)
+    rule.onAllNodesWithText("Kept on this TV", substring = true)[0].performScrollTo()
+    rule.mainClock.advanceTimeBy(1500)
+    rule.onRoot().captureRoboImage("../screens/verse/V9_settings_verse_section.png")
+  }
+  /** A refreshed verse with identical text doesn't animate; a new day crossfades (mid-fade frame). */
+  @Test fun verseCrossfade() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(3) { rule.mainClock.advanceTimeBy(500); Thread.sleep(200) }
+    st.verse = webShort.copy(fetchedAt = 99L, fums = "other")          // same text: nothing to animate
+    rule.mainClock.advanceTimeBy(16)
+    assertEquals(1, rule.onAllNodesWithText(webShort.text).fetchSemanticsNodes().size)
+    st.verse = webLong
+    rule.mainClock.advanceTimeBy(380); Thread.sleep(150)
+    rule.onRoot().captureRoboImage("../screens/verse/V10_crossfade_mid.png")
+    repeat(3) { rule.mainClock.advanceTimeBy(500); Thread.sleep(100) }
+    assertEquals(0, rule.onAllNodesWithText(webShort.text).fetchSemanticsNodes().size)
+  }
 }
 
 private fun Modifier.androidx_bg() = this.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF1A2236), androidx.compose.ui.graphics.Color(0xFF0B0D14))))

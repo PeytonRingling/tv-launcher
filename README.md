@@ -110,6 +110,19 @@ adb push ~/Pictures/family/*.jpg /sdcard/Pictures/Ambient/
 ```
 or with Send Files to TV / a file manager into `Download/Ambient`. Settings → *Rescan*.
 
+## 5. Verse of the day (NIV via API.Bible, optional)
+The **Verse of the day** home card (Settings › Home cards, or Settings › Verse of the day › Show on home) shows one short verse a
+day from the NIV, fetched from [API.Bible](https://api.bible) with your own free key. No Scripture text is in this app or repo;
+only a list of 366 references (`VerseRefs.kt`).
+1. Sign up at **api.bible**, create an app, choose the free **Starter** plan (non-commercial), and add **New International
+   Version** to it (Customize your app → "+"). Copy the app's API key. Keep it private: don't paste it into chats, issues or this repo.
+2. On the TV: Settings › Verse of the day › **Add API.Bible key**, scan the QR with your phone (same Wi-Fi), enter the code,
+   paste the key and press Save. The TV checks it once, finds the NIV, and stores the key only in the launcher's private
+   storage (excluded from backups and device transfer). (A private build can carry the key instead; see RELEASING.md.)
+3. The TV fetches today + the next 14 days at once (about one API call a day, far under Starter's 5,000/month), keeps them for
+   at most 30 days, and shows the verse, its reference, API.Bible's copyright line and "API.Bible · api.bible". Each time the
+   verse is shown it sends API.Bible's anonymous FUMS usage report. Without a key the card says "Add your API.Bible key in Settings."
+
 ## Build
 `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.
 Screenshots (Robolectric, 1920×1080, no emulator): `./gradlew testDebugUnitTest` → `screens/`.
