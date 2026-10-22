@@ -536,6 +536,59 @@ class ScreensTest {
     repeat(3) { rule.mainClock.advanceTimeBy(500); Thread.sleep(100) }
     assertEquals(0, rule.onAllNodesWithText(webShort.text).fetchSemanticsNodes().size)
   }
+
+  // ======================= Equal-size side cards (v4.3.2) =======================
+  private val webHuge = webLong.copy(text = webLong.text + " Behold, all those who are incensed against you will be disappointed and confounded. Those who strive with you will be like nothing, and shall perish.")
+  private fun sides(v: Verse, other: HomeCard, notice: Boolean = true, wall: String = "canyon") = verseState(v, true, wall).apply {
+    changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, other to CardSlot.RIGHT))
+    if (!notice) changeVerseNotice(false)
+    if (other == HomeCard.NOTE) note = "Pizza night Friday. Grandma visits Sunday at 2."
+    if (other == HomeCard.COUNTDOWN) countdown = Countdown("Christmas", 12, 25)
+    if (other == HomeCard.RECENT) recents = listOf("com.netflix.ninja", "com.google.android.youtube.tv", "com.disney.disneyplus")
+    if (other == HomeCard.PHOTO) photoOfDay = Photos.decode(ctx, Photo(asset = "wallpapers/coast.jpg"), 640)!!.asImageBitmap()
+  }
+  @Test fun s01() = shot("../sizes/S1_verse_short_notice_on_weather", sides(webShort, HomeCard.WEATHER))
+  @Test fun s02() = shot("../sizes/S2_verse_short_notice_off_weather", sides(webShort, HomeCard.WEATHER, false))
+  @Test fun s03() = shot("../sizes/S3_verse_long_notice_on_weather", sides(webLong, HomeCard.WEATHER, wall = "fjord"))
+  @Test fun s04() = shot("../sizes/S4_verse_long_notice_off_weather", sides(webLong, HomeCard.WEATHER, false, "fjord"))
+  @Test fun s05() = shot("../sizes/S5_verse_huge_notice_on_truncates", sides(webHuge, HomeCard.WEATHER, wall = "highlands"))
+  @Test fun s06() = shot("../sizes/S6_verse_photo", sides(webShort, HomeCard.PHOTO))
+  @Test fun s07() = shot("../sizes/S7_verse_inputs", sides(webLong, HomeCard.INPUTS))
+  @Test fun s08() = shot("../sizes/S8_verse_weather3", sides(webShort, HomeCard.WEATHER3))
+  @Test fun s09() = shot("../sizes/S9_verse_recent", sides(webShort, HomeCard.RECENT))
+  @Test fun s10() = shot("../sizes/S10_verse_date", sides(webShort, HomeCard.DATE, false))
+  @Test fun s11() = shot("../sizes/S11_verse_note", sides(webShort, HomeCard.NOTE))
+  @Test fun s12() = shot("../sizes/S12_verse_countdown", sides(webShort, HomeCard.COUNTDOWN))
+  @Test fun s13() = shot("../sizes/S13_verse_toggles", sides(webShort, HomeCard.TOGGLES))
+  @Test fun s14() = shot("../sizes/S14_cinematic_verse_weather", sides(webLong, HomeCard.WEATHER, wall = "coast")) { it.changeLayout(HomeLayout.CINEMATIC) }
+  @Test fun s16() = shot("../sizes/S16_two_cards_per_side_natural_heights", sides(webShort, HomeCard.WEATHER, false)) {
+    it.changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, HomeCard.DATE to CardSlot.LEFT, HomeCard.WEATHER to CardSlot.RIGHT, HomeCard.INPUTS to CardSlot.RIGHT)) }
+  @Test fun s15() = shot("../sizes/S15_weather_left_inputs_right", state()) { it.changeCards(linkedMapOf(HomeCard.WEATHER to CardSlot.LEFT, HomeCard.INPUTS to CardSlot.RIGHT)) }
+
+  /** Every card type opposite the verse card (short/long/huge, notice on/off) has exactly the verse card's size, mirrored about the clock. */
+  @Test fun sideCardsSameSize() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    val screenW = rule.onRoot().fetchSemanticsNode().boundsInRoot.width
+    fun b(c: HomeCard) = rule.onNode(androidx.compose.ui.test.hasTestTag("card-${c.name}"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+    val expected = with(rule.density) { androidx.compose.ui.geometry.Size(SideCardWidth.toPx(), SideCardHeight.toPx()) }
+    for (v in listOf(webShort, webLong, webHuge)) for (notice in listOf(true, false))
+      for (other in HomeCard.values().filter { it != HomeCard.VERSE }) {
+        st.verse = v; st.changeVerseNotice(notice)
+        st.changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, other to CardSlot.RIGHT))
+        repeat(3) { rule.mainClock.advanceTimeBy(400) }
+        val l = b(HomeCard.VERSE); val r = b(other); val msg = "${v.reference} notice=$notice vs $other: $l / $r"
+        assertEquals(msg, expected.width, l.width, 0.5f); assertEquals(msg, expected.height, l.height, 0.5f)
+        assertEquals(msg, l.width, r.width, 0.5f); assertEquals(msg, l.height, r.height, 0.5f)
+        assertEquals(msg, l.top, r.top, 0.5f); assertEquals(msg, l.left, screenW - r.right, 0.5f)
+        // the verse text and reference stay inside the card
+        rule.onAllNodes(androidx.compose.ui.test.hasText(v.text.take(20), substring = true), useUnmergedTree = true).fetchSemanticsNodes().forEach { n ->
+          assertTrue("$msg text ${n.boundsInRoot}", n.boundsInRoot.bottom <= l.bottom - 10f) }
+        rule.onAllNodes(androidx.compose.ui.test.hasText(v.reference.take(6), substring = true), useUnmergedTree = true).fetchSemanticsNodes().forEach { n ->
+          assertTrue("$msg ref ${n.boundsInRoot}", n.boundsInRoot.bottom <= l.bottom - 10f) }
+      }
+  }
 }
 
 private fun Modifier.androidx_bg() = this.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF1A2236), androidx.compose.ui.graphics.Color(0xFF0B0D14))))

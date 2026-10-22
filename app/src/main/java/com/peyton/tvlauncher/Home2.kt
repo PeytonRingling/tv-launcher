@@ -268,8 +268,11 @@ private fun GlassLayout(env: HomeEnv) {
           }
         }
       }
-      CardStack(Look.inSlot(st.cards, CardSlot.LEFT), st, env.actions, env.interactive, 228.dp, Modifier.align(Alignment.TopStart).padding(start = 46.dp, top = 44.dp))
-      CardStack(Look.inSlot(st.cards, CardSlot.RIGHT), st, env.actions, env.interactive, 228.dp, Modifier.align(Alignment.TopEnd).padding(end = 46.dp, top = 44.dp))
+      // One card per side: both get the same fixed size. Two stacked on a side keep natural heights so they clear the dock.
+      val left = Look.inSlot(st.cards, CardSlot.LEFT); val right = Look.inSlot(st.cards, CardSlot.RIGHT)
+      val cardH = if (left.size <= 1 && right.size <= 1) SideCardHeight else null
+      CardStack(left, st, env.actions, env.interactive, SideCardWidth, Modifier.align(Alignment.TopStart).padding(start = 46.dp, top = 44.dp), height = cardH)
+      CardStack(right, st, env.actions, env.interactive, SideCardWidth, Modifier.align(Alignment.TopEnd).padding(end = 46.dp, top = 44.dp), height = cardH)
     }
     Dock(env, Modifier.align(Alignment.BottomCenter).padding(bottom = 42.dp))
     if (st.dockEdit == null) T(if (st.moving != null) "‹  ›  Move   ·   OK when done" else "↓  All apps   ·   Hold OK for options", 12.sp,
@@ -291,7 +294,7 @@ private fun CinematicLayout(env: HomeEnv) {
         // Side by side (not stacked) so tall cards never reach the tile row.
         val cs = (Look.inSlot(st.cards, CardSlot.LEFT) + Look.inSlot(st.cards, CardSlot.RIGHT)).take(2)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
-          cs.forEach { c -> CardStack(listOf(c), st, env.actions, env.interactive, 228.dp, max = 1) }
+          cs.forEach { c -> CardStack(listOf(c), st, env.actions, env.interactive, SideCardWidth, max = 1, height = SideCardHeight) }
         }
       }
     }
