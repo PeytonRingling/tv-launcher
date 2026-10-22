@@ -535,9 +535,9 @@ private fun DockIcon(
   onDown: () -> Unit, content: @Composable BoxScope.() -> Unit,
 ) {
   var focused by remember { mutableStateOf(false) }
-  // State objects (not delegated) → values are read only inside layer/draw lambdas: no recomposition per frame.
+  // One focus progress drives scale, lift, glow, outline and the name bubble together. It's a State object (not delegated),
+  // read only inside layer/draw lambdas: no recomposition per frame.
   val k = animateFloatAsState(if (focused) 1f else 0f, FocusSpring, label = "dk")
-  val bub = animateFloatAsState(if (focused) 1f else 0f, tween(if (focused) 260 else 140, delayMillis = if (focused) 40 else 0, easing = EmphasizedDecel), label = "bub")
   val keys = Modifier.onKeyEvent { e ->
     val n = e.nativeKeyEvent; val down = n.action == NKey.ACTION_DOWN
     if (moving) when (n.keyCode) {
@@ -556,15 +556,18 @@ private fun DockIcon(
           val sc = 1f + 0.22f * k.value; scaleX = sc; scaleY = sc
           translationY = -10.dp.toPx() * k.value
         }
-        .drawBehind {
-          val r = size.width * 0.27f; val kk = k.value.coerceIn(0f, 1.2f)
-          for (i in 6 downTo 1) {            // soft contact shadow
-            val s = 2.dp.toPx() * i
-            drawRoundRect(Color.Black, Offset(-s / 2, s * 0.9f - s / 2), Size(size.width + s, size.height + s), CornerRadius(r + s / 2), alpha = 0.035f + 0.01f * kk)
-          }
-          if (kk > 0.01f) for (i in 8 downTo 1) {   // glow halo
-            val s = 3.dp.toPx() * i
-            drawRoundRect(glow, Offset(-s, -s), Size(size.width + 2 * s, size.height + 2 * s), CornerRadius(r + s), alpha = (0.07f * kk).coerceAtMost(0.08f))
+        .drawWithCache {
+          // Smooth, band-free halo + contact shadow: one pre-blurred, dithered mask per tile size (see [SoftGlow]),
+          // tinted at draw time. Replaces 8 + 6 stacked translucent rects (each edge was a visible ring).
+          val glowM = SoftGlow.margin.toPx(); val shM = SoftGlow.shadowMargin.toPx()
+          val halo = SoftGlow.halo(size.width.toInt(), size.height.toInt(), glowM)
+          val shadow = SoftGlow.shadow(size.width.toInt(), size.height.toInt(), shM)
+          val tint = ColorFilter.tint(glow, BlendMode.SrcIn)
+          val shY = 3.dp.toPx()
+          onDrawBehind {
+            val kk = k.value.coerceIn(0f, 1f)
+            drawImage(shadow, Offset(-shM, -shM + shY), alpha = 0.55f + 0.25f * kk)
+            if (kk > 0.004f) drawImage(halo, Offset(-glowM, -glowM), alpha = kk, colorFilter = tint)
           }
         }
         .then(keys)
@@ -589,9 +592,10 @@ private fun DockIcon(
     Box(
       Modifier.align(Alignment.BottomCenter).wrapContentSize(Alignment.BottomCenter, unbounded = true)
         .graphicsLayer {
-          val b = bub.value
+          // Same driver as the tile: the bubble rises and fades in over the last 80% of the focus motion.
+          val b = ((k.value - 0.2f) / 0.8f).coerceIn(0f, 1f)
           compositingStrategy = CompositingStrategy.ModulateAlpha   // small fade without an offscreen buffer
-          alpha = b.coerceIn(0f, 1f)
+          alpha = b
           val sc = 0.92f + 0.08f * b; scaleX = sc; scaleY = sc
           translationY = -(iconSize.toPx() * 1.22f + 10.dp.toPx() + 9.dp.toPx()) + (1f - b) * 8.dp.toPx()
         }
@@ -684,5 +688,71 @@ private fun BoxScope.AllAppsPanel(st: LauncherState, actions: Actions, req: (Str
         }
       }
     }
+  }
+}
+
+
+/**
+ * Soft, banding-free glow and shadow masks for dock tiles. Each is a rounded rect (corner 0.27 × width, like the tile squircle)
+ * blurred by three box passes (≈ gaussian), baked once per size into an ARGB bitmap with an ordered (Bayer) dither so the
+ * 8-bit alpha never steps into visible rings. All tiles share the cached masks; drawing one is a single drawImage.
+ */
+internal object SoftGlow {
+  val margin = 16.dp; val shadowMargin = 10.dp
+  /** Peak alpha of the halo at the tile edge, and of the contact shadow. */
+  const val HALO_PEAK = 0.42f; const val SHADOW_PEAK = 0.30f
+  private val cache = HashMap<String, ImageBitmap>()
+  fun halo(w: Int, h: Int, m: Float) = get("h$w:$h:${m.toInt()}") { mask(w, h, m.toInt(), m / 4f, HALO_PEAK, 0) }
+  fun shadow(w: Int, h: Int, m: Float) = get("s$w:$h:${m.toInt()}") { mask(w, h, m.toInt(), m / 4f, SHADOW_PEAK, 0xFF000000.toInt()) }
+  private fun get(key: String, make: () -> ImageBitmap) = synchronized(cache) { cache.getOrPut(key, make) }
+
+  private val bayer = intArrayOf(0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
+
+  /** Coverage (0..1) of the blurred rounded rect, before peak scaling; exposed for tests. */
+  fun coverage(w: Int, h: Int, m: Int, sigma: Float): FloatArray {
+    val W = w + 2 * m; val H = h + 2 * m; val r = 0.27f * w
+    val a = FloatArray(W * H)
+    for (y in 0 until H) for (x in 0 until W) {
+      // signed distance to the rounded rect, antialiased over 1px
+      val px = x + 0.5f - m - w / 2f; val py = y + 0.5f - m - h / 2f
+      val qx = kotlin.math.abs(px) - (w / 2f - r); val qy = kotlin.math.abs(py) - (h / 2f - r)
+      val out = kotlin.math.hypot(maxOf(qx, 0f).toDouble(), maxOf(qy, 0f).toDouble()).toFloat() + minOf(maxOf(qx, qy), 0f) - r
+      a[y * W + x] = (0.5f - out).coerceIn(0f, 1f)
+    }
+    // 3 box passes of radius rb ≈ gaussian sigma (sigma² = 3·((2rb+1)²−1)/12  ⇒  2rb+1 = √(4σ²+1))
+    val rb = maxOf(1, kotlin.math.round((kotlin.math.sqrt(4.0 * sigma * sigma + 1.0) - 1.0) / 2.0).toInt())
+    val tmp = FloatArray(W * H)
+    repeat(3) { boxH(a, tmp, W, H, rb); boxV(tmp, a, W, H, rb) }
+    return a
+  }
+  private fun boxH(src: FloatArray, dst: FloatArray, W: Int, H: Int, r: Int) {
+    val n = 2 * r + 1
+    for (y in 0 until H) { val o = y * W; var sum = 0f
+      for (i in -r..r) sum += src[o + i.coerceIn(0, W - 1)]
+      for (x in 0 until W) { dst[o + x] = sum / n; sum += src[o + (x + r + 1).coerceAtMost(W - 1)] - src[o + (x - r).coerceAtLeast(0)] } }
+  }
+  private fun boxV(src: FloatArray, dst: FloatArray, W: Int, H: Int, r: Int) {
+    val n = 2 * r + 1
+    for (x in 0 until W) { var sum = 0f
+      for (i in -r..r) sum += src[i.coerceIn(0, H - 1) * W + x]
+      for (y in 0 until H) { dst[y * W + x] = sum / n; sum += src[(y + r + 1).coerceAtMost(H - 1) * W + x] - src[(y - r).coerceAtLeast(0) * W + x] } }
+  }
+  private fun mask(w: Int, h: Int, m: Int, sigma: Float, peak: Float, rgb: Int): ImageBitmap {
+    val W = w + 2 * m; val H = h + 2 * m
+    val cov = coverage(w, h, m, sigma)
+    // Normalize so the tile edge (≈ 0.5 coverage) reaches [peak]; inside the tile is hidden by the tile itself.
+    val px = IntArray(W * H)
+    val cr = (rgb shr 16) and 0xFF; val cg = (rgb shr 8) and 0xFF; val cb = rgb and 0xFF
+    val white = rgb == 0
+    for (i in px.indices) {
+      val v = (cov[i] * 2f).coerceAtMost(1f) * peak * 255f
+      val d = (bayer[((i / W) and 3) * 4 + ((i % W) and 3)] + 0.5f) / 16f   // 0..1 ordered dither threshold
+      val a = (v + d - 0.5f).let { kotlin.math.floor(it + 0.5f).toInt() }.coerceIn(0, 255)
+      // premultiplied for Bitmap; white mask gets tinted by the caller (SrcIn), black stays black
+      px[i] = if (white) (a shl 24) or (a shl 16) or (a shl 8) or a else (a shl 24) or ((cr * a / 255) shl 16) or ((cg * a / 255) shl 8) or (cb * a / 255)
+    }
+    val b = android.graphics.Bitmap.createBitmap(W, H, android.graphics.Bitmap.Config.ARGB_8888)
+    b.setPixels(px, 0, W, 0, 0, W, H)   // setPixels takes unpremultiplied colors; for white/black masks that's equivalent
+    return b.asImageBitmap()
   }
 }

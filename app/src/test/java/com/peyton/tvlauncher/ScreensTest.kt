@@ -589,6 +589,37 @@ class ScreensTest {
           assertTrue("$msg ref ${n.boundsInRoot}", n.boundsInRoot.bottom <= l.bottom - 10f) }
       }
   }
+
+  // ======================= Dock focus glow (v4.3.3) =======================
+  private val focusOut = System.getProperty("focusOut") ?: "../screens/focus"
+  /** Focused YouTube tile at rest, then frames of focus moving YouTube → Netflix (DPAD right). */
+  @Test fun focusGlowFrames() {
+    val st = state()
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(4) { rule.mainClock.advanceTimeBy(500); Thread.sleep(100) }
+    rule.onRoot().captureRoboImage("$focusOut/rest.png")
+    rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+    var t = 0L
+    for (ms in listOf(16L, 50L, 100L, 160L, 240L, 400L, 900L)) {
+      rule.mainClock.advanceTimeBy(ms - t); t = ms
+      rule.onRoot().captureRoboImage("$focusOut/move_${ms}ms.png")
+    }
+  }
+
+  /** The halo mask falls off monotonically from the tile edge with no step bigger than ~1/255 (smoothed over the 4px dither). */
+  @Test fun focusGlowIsSmooth() {
+    val w = 112; val m = with(rule.density) { SoftGlow.margin.toPx() }   // 56dp tile at xhdpi
+    val cov = SoftGlow.coverage(w, w, m.toInt(), m / 4f); val W = w + 2 * m.toInt(); val y = W / 2
+    val row = (0..m.toInt()).map { cov[y * W + m.toInt() - it] }   // tile edge → outward
+    for (i in 1 until row.size) assertTrue("coverage not monotonic at $i: ${row[i - 1]} -> ${row[i]}", row[i] <= row[i - 1] + 1e-6f)
+    val bmp = SoftGlow.halo(w, w, m).asAndroidBitmap()
+    val alpha = (0 until W).map { x -> (0 until 4).sumOf { dy -> android.graphics.Color.alpha(bmp.getPixel(x, y + dy)) } / 4.0 }
+    val out = (0..m.toInt()).map { alpha[m.toInt() - it] }
+    println("GLOW_ALPHA_ROW edge->out: " + out.joinToString(" ") { "%.1f".format(it) })
+    println("GLOW_COVERAGE_ROW edge->out: " + row.joinToString(" ") { "%.3f".format(it) })
+    for (i in 1 until out.size) assertTrue("alpha step at $i: ${out[i - 1]} -> ${out[i]}", out[i] <= out[i - 1] + 1.0)
+  }
 }
 
 private fun Modifier.androidx_bg() = this.background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF1A2236), androidx.compose.ui.graphics.Color(0xFF0B0D14))))
