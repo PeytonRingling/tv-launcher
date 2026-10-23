@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity(), Actions {
       hide(WindowInsetsCompat.Type.systemBars())
       systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
+    VerseSeed.applyNoticeDefault(Prefs(this).sp, BuildConfig.VERSE_NOTICE_OFF_BY_DEFAULT)   // before the first frame: no flip
     st = LauncherState(Prefs(this))
     // Cold start: last dock + frosted backdrop from app storage, before the first frame (a few small PNGs), so the dock
     // and glass are complete immediately; the live app load below swaps in identical entries without any reflow.
@@ -73,7 +74,7 @@ class MainActivity : ComponentActivity(), Actions {
           st.inputsOpen -> st.inputsOpen = false
           st.allApps -> st.allApps = false
           st.moving != null -> st.moving = null
-          st.screen in setOf(Screen.LAYOUT, Screen.CARDS, Screen.CLOCK, Screen.PHONE_UPLOAD, Screen.MY_PHOTOS, Screen.UPDATE) -> st.screen = Screen.SETTINGS
+          st.screen in setOf(Screen.LAYOUT, Screen.CARDS, Screen.CLOCK, Screen.PHONE_UPLOAD, Screen.MY_PHOTOS, Screen.UPDATE, Screen.WEATHER_ZIP, Screen.VERSE_KEY) -> st.screen = Screen.SETTINGS
           st.screen != Screen.HOME -> st.screen = Screen.HOME
           else -> st.homeTick++ // a launcher never "exits"; BACK just returns to the top
         }
@@ -96,11 +97,46 @@ class MainActivity : ComponentActivity(), Actions {
     // Weather: refresh every 30 min while visible.
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
-        while (true) {
-          val stale = st.weather?.let { System.currentTimeMillis() - it.fetchedAt > 25 * 60_000 } ?: true
-          if (stale) withContext(Dispatchers.IO) { WeatherApi.fetchJson() }?.let { st.setWeatherJson(it) }
-          delay(30 * 60_000L)
+        // Restarts immediately when the ZIP changes; nothing to fetch until one is set.
+        androidx.compose.runtime.snapshotFlow { st.place }.collectLatest { p ->
+          while (p != null) {
+            val stale = st.weather?.let { System.currentTimeMillis() - it.fetchedAt > 25 * 60_000 } ?: true
+            if (stale) withContext(Dispatchers.IO) { WeatherApi.fetchJson(p) }?.let { if (st.place == p) st.setWeatherJson(it) }
+            delay(30 * 60_000L)
+          }
         }
+      }
+    }
+    // Private builds only: move a compiled-in API.Bible key into private storage once (retries on network errors).
+    if (BuildConfig.API_BIBLE_SEED.isNotEmpty()) lifecycleScope.launch {
+      while (!st.verseKey) {
+        val r = withContext(Dispatchers.IO) { VerseSeed.migrate(Prefs(this@MainActivity).verse, Prefs(this@MainActivity).sp, BuildConfig.API_BIBLE_SEED, installedVc()) }
+        if (r == VerseSeed.Result.SAVED) { val s = Prefs(this@MainActivity).verse; st.verseKey = true; st.verseAbbr = s.abbr; st.verseStatus = null; syncVerse() }
+        if (r != VerseSeed.Result.RETRY_LATER) break
+        delay(15 * 60_000L)
+      }
+    }
+    // Verse of the day: show the cached day at once; sync today + 14 days every 6 h (15 min while today is missing).
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        st.verseSession++; fumsSession = java.util.UUID.randomUUID().toString(); fumsSent.clear()
+        var lastPass = 0L; var lastDay: java.time.LocalDate? = null
+        while (true) {
+          val today = java.time.LocalDate.now(); val now = System.currentTimeMillis()
+          val store = Prefs(this@MainActivity).verse
+          val v = withContext(Dispatchers.IO) { store.get(today, now) }
+          if (v != st.verse) st.verse = v
+          val every = if (st.verse == null) 15 * 60_000L else 6 * 60 * 60_000L
+          if (st.verseKey && (today != lastDay || now - lastPass > every)) { syncVerse(); lastPass = now; lastDay = today }
+          delay(60_000)
+        }
+      }
+    }
+    // Quiet GitHub update check: at most once a day, well after the cold start, never installs anything by itself.
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        delay(20_000)
+        while (true) { quietGitHubCheck(); delay(60 * 60_000L) }
       }
     }
     // Idle → ambient.
@@ -376,10 +412,12 @@ class MainActivity : ComponentActivity(), Actions {
   override fun onStart() {
     super.onStart()
     if (st.screen == Screen.PHONE_UPLOAD) startPhotoServer()
+    if (st.screen == Screen.VERSE_KEY) startKeyServer()
   }
 
   override fun onStop() {
     stopPhotoServerNow()   // never leave the server running in the background
+    keyGen++; keyServer?.stop(); keyServer = null
     // Keep the update server only while the system install prompt is covering us, so the phone sees the result.
     if (st.update?.phase != UpdatePhase.CONFIRM && st.update?.phase != UpdatePhase.INSTALLING) stopUpdateServer()
     super.onStop()
@@ -400,27 +438,192 @@ class MainActivity : ComponentActivity(), Actions {
       setUpdate { it.copy(phase = UpdatePhase.RECEIVING, message = "Receiving update… ${read * 100 / total}%", progress = read / total.toFloat()) }
 
     override fun onApk(file: java.io.File): Pair<Boolean, String> {
-      setUpdate { it.copy(phase = UpdatePhase.VERIFYING, message = "Checking the file…", progress = null) }
-      val meta = Updater.inspect(this@MainActivity, file)
-      val cur = Updater.installed(this@MainActivity)
-      Updater.check(meta, cur)?.let { why ->
-        file.delete(); setUpdate { it.copy(phase = UpdatePhase.ERROR, message = why, progress = null, pending = null) }
-        return false to why
-      }
-      val dest = Updater.pendingFile(this@MainActivity); dest.delete()
-      if (!file.renameTo(dest)) { file.copyTo(dest, true); file.delete() }
-      val v = meta!!.versionName ?: meta.versionCode.toString()
-      runOnUiThread {
-        if (Updater.canInstall(this@MainActivity)) { setUpdate { it.copy(pending = meta) }; installPending() }
-        else setUpdate { it.copy(phase = UpdatePhase.NEEDS_PERMISSION, pending = meta,
-          message = "Version $v is ready. Allow installs for TV Launcher on the TV, then press Install.") }
-      }
-      return true to "Version $v checks out (same app, same key, newer). Look at the TV to confirm the install."
+      val why = verifyAndStage(file) { meta, cur -> Updater.check(meta, cur) }
+      return if (why != null) false to why
+      else true to "Version ${updSnap.pending?.versionName ?: ""} checks out (same app, same key, newer). Look at the TV to confirm the install."
     }
 
     override fun statusJson(): String {
       val u = updSnap
       return "{\"phase\":\"${u.phase}\",\"message\":${PhotoServer.q(u.message)},\"progress\":${u.progress ?: "null"}}"
+    }
+  }
+
+  /**
+   * Shared by the phone/QR path and the GitHub path: inspect the APK, run [rules] (null = OK), then stage it as the
+   * pending update and hand it to PackageInstaller (or wait for the "install unknown apps" permission). Blocking; IO thread.
+   */
+  private fun verifyAndStage(file: java.io.File, rules: (ApkMeta?, ApkMeta) -> String?): String? {
+    setUpdate { it.copy(phase = UpdatePhase.VERIFYING, message = "Checking the file…", progress = null) }
+    val meta = Updater.inspect(this, file)
+    val cur = Updater.installed(this)
+    rules(meta, cur)?.let { why ->
+      file.delete(); setUpdate { it.copy(phase = UpdatePhase.ERROR, message = why, progress = null, pending = null) }
+      return why
+    }
+    val dest = Updater.pendingFile(this); dest.delete()
+    if (!file.renameTo(dest)) { file.copyTo(dest, true); file.delete() }
+    val v = meta!!.versionName ?: meta.versionCode.toString()
+    updSnap = updSnap.copy(pending = meta)
+    runOnUiThread {
+      if (Updater.canInstall(this)) { setUpdate { it.copy(pending = meta) }; installPending() }
+      else setUpdate { it.copy(phase = UpdatePhase.NEEDS_PERMISSION, pending = meta,
+        message = "Version $v is ready. Allow installs for TV Launcher on the TV, then press Install.") }
+    }
+    return null
+  }
+
+  // ------------------------------------------------------------ weather location (ZIP entered on the TV)
+
+  private var zipJob: Job? = null
+  override fun setZip(zip: String) {
+    if (zipJob?.isActive == true) return
+    st.zipStatus = "…"
+    zipJob = lifecycleScope.launch {
+      when (val r = withContext(Dispatchers.IO) { ZipLookup.lookup(zip) }) {
+        is ZipResult.Found -> { st.changePlace(r.place); st.zipStatus = null; st.screen = Screen.SETTINGS }
+        is ZipResult.Failed -> st.zipStatus = r.reason   // the old location stays as it was
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ verse of the day (API.Bible)
+
+  private var verseJob: Job? = null
+  private var fumsSession = java.util.UUID.randomUUID().toString()
+  private val fumsSent = java.util.Collections.synchronizedSet(HashSet<String>())
+
+  /** One sync pass (purge + fetch what's missing). Errors keep whatever is cached and show on the card only if today is missing. */
+  internal fun syncVerse(): Job? {
+    if (verseJob?.isActive == true) return verseJob
+    val store = Prefs(this).verse
+    val cred = store.cred ?: return null
+    if (st.verse == null) st.verseStatus = null   // "Getting today's verse…" while the first pass runs
+    verseJob = lifecycleScope.launch {
+      val err = withContext(Dispatchers.IO) { VerseSync.run(store, cred, java.time.LocalDate.now()) }
+      st.verseStatus = err
+      st.verse = withContext(Dispatchers.IO) { store.get(java.time.LocalDate.now()) }
+    }
+    return verseJob
+  }
+
+  override fun reportFums(token: String) {
+    if (!fumsSent.add(token)) return
+    val dId = Prefs(this).verse.deviceId; val sId = fumsSession
+    lifecycleScope.launch(Dispatchers.IO) { if (!VerseApi.reportFums(token, dId, sId)) fumsSent.remove(token) }
+  }
+
+  override fun removeVerseKey() {
+    verseJob?.cancel()
+    Prefs(this).verse.clearAll()
+    VerseSeed.turnOff(Prefs(this).sp)
+    st.verseKey = false; st.verse = null; st.verseStatus = null
+  }
+
+  private var keyServer: PhotoServer? = null
+  private var keyStarting = false
+  private var keyGen = 0
+
+  private fun setKeyUi(f: (KeyUi) -> KeyUi) {
+    val run = { st.keyUi = f(st.keyUi ?: KeyUi()) }
+    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run() else runOnUiThread(run)
+  }
+
+  internal val keyHooks = object : KeyHooks {
+    /** Server thread. Validates once against API.Bible (finds the NIV id), then stores key + id privately. Never logs the key. */
+    override fun onKey(key: String): Pair<Boolean, String> {
+      setKeyUi { it.copy(phase = KeyPhase.CHECKING, message = "Checking the key with API.Bible…") }
+      return when (val r = VerseApi.validate(key)) {
+        is KeyCheck.Valid -> {
+          val store = Prefs(this@MainActivity).verse
+          val old = store.cred
+          store.cred = VerseCred(key, r.bibleId, r.abbr)
+          if (old != null && old.bibleId != r.bibleId) store.clearVerses()
+          val msg = "Saved. ${r.name} (${r.abbr}) found; today's verse is on its way."
+          runOnUiThread {
+            st.verseKey = true; st.verseAbbr = r.abbr; st.verseStatus = null
+            setKeyUi { it.copy(phase = KeyPhase.SAVED, message = msg) }
+            verseJob?.cancel(); syncVerse()
+          }
+          true to msg
+        }
+        is KeyCheck.Invalid -> { setKeyUi { it.copy(phase = KeyPhase.ERROR, message = r.reason) }; false to r.reason }
+      }
+    }
+  }
+
+  override fun startKeyServer() {
+    if (keyServer != null || keyStarting) return
+    keyStarting = true
+    val gen = keyGen
+    lifecycleScope.launch(kotlinx.coroutines.NonCancellable) {
+      val srv = withContext(Dispatchers.IO) { PhotoServer.startKey(this@MainActivity, keyHooks) }
+      keyStarting = false
+      if (gen != keyGen || st.screen != Screen.VERSE_KEY) { withContext(Dispatchers.IO) { srv?.stop() }; return@launch }
+      keyServer = srv
+      val ip = withContext(Dispatchers.IO) { PhotoServer.lanAddress() }
+      setKeyUi {
+        when {
+          srv == null -> it.copy(url = null, serverError = "Couldn't start sharing on this TV (ports 8765-8775 busy).")
+          ip == null -> { srv.stop(); keyServer = null; it.copy(url = null, serverError = "The TV isn't connected to a network.") }
+          else -> it.copy(url = "http://$ip:${srv.listeningPort}/${srv.pin}", pin = srv.pin, serverError = null)
+        }
+      }
+    }
+  }
+
+  override fun stopKeyServer() {
+    keyGen++
+    keyServer?.stop(); keyServer = null
+    st.keyUi = null
+  }
+
+  // ------------------------------------------------------------ self-update from GitHub Releases
+
+  private var ghJob: Job? = null
+  private fun installedVc() = runCatching { Updater.installed(this).versionCode }.getOrDefault(Long.MAX_VALUE)
+
+  /** Background check (see onCreate): quiet, at most once a day; only ever shows the "update available" badge. */
+  private suspend fun quietGitHubCheck() {
+    val prefs = Prefs(this)
+    if (st.gh.phase in setOf(GhPhase.AVAILABLE, GhPhase.CHECKING, GhPhase.DOWNLOADING)) return
+    if (System.currentTimeMillis() - prefs.ghLastCheck < 24 * 60 * 60_000L) return
+    val vc = installedVc()
+    val r = withContext(Dispatchers.IO) { GitHubReleases.fetchLatest(Updater.GH_REPO, Updater.GH_ASSET_PREFIX, vc) }
+    // An available update isn't recorded, so a restart re-checks once and the badge comes back.
+    if (r !is GhCheck.Available) prefs.ghLastCheck = System.currentTimeMillis()
+    if (st.gh.phase == GhPhase.CHECKING || st.gh.phase == GhPhase.DOWNLOADING) return   // a manual check won the race
+    if (r !is GhCheck.Failed) st.gh = GhUi.of(r)   // errors stay silent in the background
+  }
+
+  override fun checkGitHub() {
+    if (st.gh.phase == GhPhase.CHECKING || st.gh.phase == GhPhase.DOWNLOADING) return
+    st.gh = GhUi(GhPhase.CHECKING, "Checking GitHub for updates…", st.gh.release)
+    ghJob = lifecycleScope.launch {
+      val vc = installedVc()
+      val r = withContext(Dispatchers.IO) { GitHubReleases.fetchLatest(Updater.GH_REPO, Updater.GH_ASSET_PREFIX, vc) }
+      if (r !is GhCheck.Available) Prefs(this@MainActivity).ghLastCheck = System.currentTimeMillis()
+      st.gh = GhUi.of(r)
+    }
+  }
+
+  override fun installFromGitHub() {
+    val rel = st.gh.release?.takeIf { st.gh.phase == GhPhase.AVAILABLE } ?: return checkGitHub()
+    st.gh = GhUi(GhPhase.DOWNLOADING, "Downloading version ${rel.versionName}…", rel)
+    setUpdate { it.copy(phase = UpdatePhase.RECEIVING, message = "Downloading ${rel.versionName} from GitHub…", progress = 0f, pending = null) }
+    ghJob = lifecycleScope.launch {
+      val f = Updater.downloadFile(this@MainActivity)
+      val why = withContext(Dispatchers.IO) {
+        try {
+          GitHubReleases.download(rel, f) { read, total ->
+            if (total > 0) setUpdate { it.copy(phase = UpdatePhase.RECEIVING, message = "Downloading ${rel.versionName}… ${read * 100 / total}%", progress = read / total.toFloat()) }
+          }
+          verifyAndStage(f) { meta, cur -> Updater.checkGitHub(meta, cur, rel) }
+        } catch (e: java.io.IOException) {
+          f.delete(); (e.message ?: "Download failed.").also { m -> setUpdate { it.copy(phase = UpdatePhase.ERROR, message = m, progress = null) } }
+        }
+      }
+      st.gh = if (why == null) GhUi(GhPhase.AVAILABLE, "Version ${rel.versionName} downloaded and verified.", rel) else GhUi(GhPhase.ERROR, why, rel)
     }
   }
 
@@ -481,7 +684,7 @@ class MainActivity : ComponentActivity(), Actions {
         setUpdate { it.copy(phase = UpdatePhase.CONFIRM, message = "Confirm the update on the TV: choose Update / Install.") }
         if (confirm == null || !start(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) setUpdate { it.copy(phase = UpdatePhase.ERROR, message = "The TV didn't show the install prompt.") }
       }
-      android.content.pm.PackageInstaller.STATUS_SUCCESS -> { Updater.pendingFile(this).delete(); setUpdate { it.copy(phase = UpdatePhase.DONE, message = "Updated! The launcher restarts on the new version.", pending = null) } }
+      android.content.pm.PackageInstaller.STATUS_SUCCESS -> { Updater.pendingFile(this).delete(); st.gh = GhUi(); setUpdate { it.copy(phase = UpdatePhase.DONE, message = "Updated! The launcher restarts on the new version.", pending = null) } }
       android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED -> setUpdate { it.copy(phase = UpdatePhase.ERROR, message = "Install was cancelled on the TV. Press Install to try again.") }
       android.content.pm.PackageInstaller.STATUS_FAILURE_STORAGE -> setUpdate { it.copy(phase = UpdatePhase.ERROR, message = "Not enough storage on the TV for the update.") }
       android.content.pm.PackageInstaller.STATUS_FAILURE_CONFLICT, android.content.pm.PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->

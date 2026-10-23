@@ -45,11 +45,12 @@ class AmbientDream : DreamService(), LifecycleOwner, SavedStateRegistryOwner {
     view.setViewTreeSavedStateRegistryOwner(this)
     window?.decorView?.let { it.setViewTreeLifecycleOwner(this); it.setViewTreeSavedStateRegistryOwner(this) }
     view.setContent {
-      var weather by remember { mutableStateOf(if (prefs.showWeather) WeatherApi.parse(prefs.weatherJson) else null) }
+      val place = remember { prefs.weatherPlace }
+      var weather by remember { mutableStateOf(if (prefs.showWeather && place != null) WeatherApi.parse(prefs.weatherJson) else null) }
       var photos by remember { mutableStateOf(listOf<Photo>()) }
       LaunchedEffect(Unit) {
         photos = withContext(Dispatchers.IO) { Photos.forAmbient(prefs.ambientSource, MyPhotos.list(this@AmbientDream), Photos.builtins(this@AmbientDream)) }
-        if (prefs.showWeather) withContext(Dispatchers.IO) { WeatherApi.fetchJson() }?.let { j ->
+        if (prefs.showWeather && place != null) withContext(Dispatchers.IO) { WeatherApi.fetchJson(place) }?.let { j ->
           WeatherApi.parse(j)?.let { weather = it; prefs.weatherJson = j }
         }
       }
@@ -58,7 +59,7 @@ class AmbientDream : DreamService(), LifecycleOwner, SavedStateRegistryOwner {
         override fun loadCover(p: Photo, w: Int, h: Int) = Photos.decodeCover(this@AmbientDream, p, w, h)
       } }
       val look = Look.clock(prefs)
-      AmbientScreen(photos, src, weather, prefs.use24h, prefs.celsius, look.takeIf { it.inAmbient }, prefs.sp.getBoolean("enhance", false))
+      AmbientScreen(photos, src, weather, prefs.use24h, prefs.celsius, look.takeIf { it.inAmbient }, prefs.sp.getBoolean("enhance", false), place?.label ?: "")
     }
     setContentView(view)
     registry.handleLifecycleEvent(Lifecycle.Event.ON_START)

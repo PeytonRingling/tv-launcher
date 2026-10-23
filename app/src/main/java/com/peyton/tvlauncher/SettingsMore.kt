@@ -98,6 +98,7 @@ fun CardSettings(st: LauncherState, actions: Actions) {
     T(when {
       st.layout == HomeLayout.MINIMAL -> "Minimal shows no cards. Pick another layout to see them."
       l > 2 || r > 2 -> "Only the first 2 cards of a side are shown."
+      st.layout.ordinal > HomeLayout.MINIMAL.ordinal -> "${st.layout.title} shows the weather and the verse in its own way."
       st.layout != HomeLayout.GLASS -> "${st.layout.title} stacks both sides in one column."
       else -> "Layout: ${st.layout.title}"
     }, 13.sp, Modifier.padding(top = 10.dp, start = 4.dp).width(470.dp), color = Ink.copy(alpha = 0.75f), maxLines = 2)

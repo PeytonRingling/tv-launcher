@@ -25,8 +25,8 @@ The keystore is **not** in this repo (`*.keystore`, `*.jks`, `*.p12` are git-ign
 ./gradlew assembleRelease -Pvc=8 -Pvn=4.3
 # -> app/build/outputs/apk/release/app-release.apk
 ```
-* `versionCode` **must be higher** than the installed one, or the updater refuses it. History: v4.0=5, v4.1=6, v4.2=7.
-  The defaults in `app/build.gradle.kts` track the current release (7 / "4.2"), so always pass `-Pvc/-Pvn` for a new one
+* `versionCode` **must be higher** than the installed one, or the updater refuses it. History: v4.0=5, v4.1=6, v4.2=7, v4.3=8.
+  The defaults in `app/build.gradle.kts` track the current release (8 / "4.3"), so always pass `-Pvc/-Pvn` for a new one
   and update the defaults in the same commit.
 * Verify before delivering:
   ```bash
@@ -47,21 +47,33 @@ The keystore is **not** in this repo (`*.keystore`, `*.jks`, `*.p12` are git-ign
 | `tvlauncher.keyAlias` | `TVL_KEY_ALIAS` | `androiddebugkey` |
 | `tvlauncher.keyPassword` | `TVL_KEY_PASSWORD` | `android` |
 
-On the original build box nothing needs to be set for signing (the weather location comes from `~/.gradle/gradle.properties`, see below).
+On the original build box nothing needs to be set for signing.
 
-## Weather location (kept out of the repo)
-The home-screen weather location is a build-time setting, resolved like the signing values (Gradle property → env var → default):
+## Weather location (entered on the TV, never compiled in)
+Since v4.3 the location comes from a US ZIP code entered on the TV (Settings › Display › Weather location), resolved once via
+Zippopotam.us (no key) and stored in the launcher's prefs; Open-Meteo picks the timezone (`timezone=auto`). There is no
+build-time location any more: no `BuildConfig.WEATHER_*`, no `tvlauncher.weather.*` / `TVL_WEATHER_*` settings. A fresh install
+or an update from v4.2 shows "Set your ZIP code…" on the weather cards until a ZIP is entered.
+`tools/release.sh` fails if the APK contains any legacy location value (it greps the unpacked APK for the old
+`tvlauncher.weather.*` values if a machine still has them, and for `WEATHER_*` BuildConfig fields).
 
-| Gradle property | Env var | Repo default |
-|---|---|---|
-| `tvlauncher.weather.place` | `TVL_WEATHER_PLACE` | `New York, NY` (label shown on the TV) |
-| `tvlauncher.weather.lat` | `TVL_WEATHER_LAT` | `40.7128` |
-| `tvlauncher.weather.lon` | `TVL_WEATHER_LON` | `-74.0060` |
-| `tvlauncher.weather.tz` | `TVL_WEATHER_TZ` | `America/New_York` (IANA zone for the forecast hours) |
-
-The real home location lives in `~/.gradle/gradle.properties` on the original build box, not in git. On any other machine or
-cloud agent, set the four `TVL_WEATHER_*` values (as secrets/env) before building a release, or the TV will show the neutral
-default city's weather.
+## Verse of the day: the API.Bible key is never in the repo or a public APK
+The verse card shows the NIV from **API.Bible** with Peyton's own free key (Starter plan, non-commercial). API.Bible's terms
+forbid making the key available to anyone else, and this repo and its GitHub releases are public, so:
+* **Public builds** (`tools/release.sh`) force an empty seed (`-PAPI_BIBLE_KEY=`), then fail if the APK contains the key
+  (from the `API_BIBLE_KEY` env var or `~/.gradle/gradle.properties`, never printed), if `BuildConfig.API_BIBLE_SEED` isn't
+  empty, if `API_BIBLE_KEY` appears in the repo's properties files, or if the dex looks like it contains Scripture text.
+  Any other `assemble*` with `API_BIBLE_KEY` set but no `-Ptvlauncher.private=true` fails in Gradle.
+* **Private build** for Drive only: `API_BIBLE_KEY=… tools/build-private.sh 8 4.3` → `release/private/tv-launcher-v4.3-vc8-private.apk`
+  (git-ignored; same versionCode, signer checked). On first launch the app checks the seed with API.Bible once and moves it
+  into private storage, exactly like the QR path. Later public updates have no seed and keep the stored key. Anyone with
+  the private APK can extract the key: deliver it only through Peyton's own Drive, never GitHub. The script runs
+  `./gradlew clean` at the end so no key-bearing build output is left in `app/build`.
+* The private flag also seeds Settings › Verse of the day › **Show copyright on card** OFF, once, on first launch and only
+  if it was never set (Peyton's personal choice; it departs from API.Bible's attribution terms, so public builds keep it ON).
+  Bump the private versionCode above whatever is installed, e.g. `tools/build-private.sh 9 4.3.1` over the private vc 8.
+* **No seed at all**: Settings › Verse of the day › Add API.Bible key shows a QR + PIN; paste the key on the phone.
+* Removing the key in Settings also deletes the cached verses and stops a seeded build from re-adding it.
 
 ## Building on another machine / a cloud agent (documented only, not set up)
 Provide the *same* keystore as a secret, then decode it at build time. Never commit it.
@@ -87,7 +99,34 @@ Provide the *same* keystore as a secret, then decode it at build time. Never com
   v4.0/v4.1 APKs plus a throwaway "other key" copy. Without them the test is skipped, not failed. Afterwards, rebuild the real
   release, because the script leaves `app-release.apk` at versionCode 6.
 
-## Delivery: Google Drive + the in-app QR updater
+## Delivery 1: GitHub Releases + the in-app updater (preferred)
+The launcher checks `https://api.github.com/repos/PeytonRingling/tv-launcher/releases/latest` (public, no token).
+
+**Naming convention (the app depends on it):**
+* tag `v<versionName>`, e.g. `v4.3`
+* exactly one APK asset named `tv-launcher-v<versionName>-vc<versionCode>.apk`, e.g. `tv-launcher-v4.3-vc8.apk`
+
+The updater reads the versionCode from the asset name (one API call, no APK download just to compare), offers the update
+only if it's higher than the installed build, downloads it to the app cache, and before PackageInstaller sees it checks:
+package `com.peyton.tvlauncher`, signer exactly `65f0d4cb…4a4d113f` (pinned), versionCode higher than installed **and**
+equal to the one in the asset name. Other assets (`.idsig`, notes, other apps' APKs) are ignored.
+
+```bash
+tools/release.sh 8 4.3              # build + verify (aapt/apksigner) + refuse non-increasing versionCode; prints the gh command
+tools/release.sh 8 4.3 --publish    # same, then `gh release create v4.3 release/tv-launcher-v4.3-vc8.apk ...` (Peyton's OK first)
+```
+`--publish` also requires HEAD == origin/main (merge first, so the tag points at the shipped code).
+
+**Location check:** releases are location-free (see "Weather location" above); `release.sh` verifies that on the built APK.
+
+On the TV: **Settings → System → Update launcher → Install x.y from GitHub** (or "Check GitHub for updates"). Android shows
+its install prompt; the first time it also asks to allow "Install unknown apps" for TV Launcher. The launcher also checks
+quietly at most once a day (20 s after start, never during the cold start) and only shows an "Update x.y available" notice
+in Settings; it never installs on its own. Rate limits (60 unauthenticated calls/hour per IP) show as a friendly error.
+
+## Delivery 2 (fallback): Google Drive + the in-app QR updater
+(The private, key-seeded APK from `tools/build-private.sh` goes this way only. The QR updater needs a higher versionCode than the
+one installed, so the private v4.3 (vc 8) installs over v4.2 (vc 7), not over a public vc 8.)
 1. Upload `TV Launcher v<x.y>.apk` to Peyton's **Google Drive** (root, next to earlier versions). Direct downloads from chat
    don't work on his phone, so always use Drive.
 2. On the TV: Settings → System → **Update launcher**, then scan the QR with the phone, enter/confirm the 6-digit PIN, and pick

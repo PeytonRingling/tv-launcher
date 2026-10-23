@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: cloud backup and device-to-device transfer. The API.Bible key and the cached verse text never leave the TV. -->
+<data-extraction-rules>
+  <cloud-backup>
+    <exclude domain="sharedpref" path="apibible_secret.xml" />
+    <exclude domain="sharedpref" path="verse_cache.xml" />
+  </cloud-backup>
+  <device-transfer>
+    <exclude domain="sharedpref" path="apibible_secret.xml" />
+    <exclude domain="sharedpref" path="verse_cache.xml" />
+  </device-transfer>
+</data-extraction-rules>

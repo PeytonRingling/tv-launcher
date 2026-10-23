@@ -1,3 +1,7 @@
+Copyright 2011, The VT323 Project Authors (peter.hull@oikoi.com)
+Copyright 2012 The Press Start 2P Project Authors (cody@zone38.net), with Reserved Font Name "Press Start 2P".
+Copyright 2010 The Bangers Project Authors (https://github.com/googlefonts/bangers)
+Copyright (c) 2011 by vernon adams. Monoton is licensed under the SIL Open Font License 1.1 (Google Fonts).
 Copyright 2018 The Manrope Project Authors (https://github.com/googlefonts/manrope)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.

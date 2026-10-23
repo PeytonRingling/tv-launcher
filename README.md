@@ -5,7 +5,7 @@ updates and Chromecast keep working underneath. Uninstall it (or run `scripts/re
 is exactly as before. Everything is driven by the remote's D-pad.
 
 ## What's in it
-- **Home**: big clock + date, live weather (Open-Meteo, no account/key; location set at build time, see [RELEASING.md](RELEASING.md)), a **Favorites** row and an
+- **Home**: big clock + date, live weather (Open-Meteo, no account/key; location from a ZIP code entered in Settings › Weather location), a **Favorites** row and an
   **All apps** grid with each app's TV banner (or icon). Frosted-glass background made from your ambient photos.
   Smooth scale-and-glow focus animation. No ads, no "recommended for you" rows.
 - **Hold OK** (or press the Menu button) on any app → Open · Add/Remove Favorite · **Move** (◀ ▶ to reorder, OK to finish)
@@ -109,6 +109,22 @@ adb shell mkdir -p /sdcard/Pictures/Ambient
 adb push ~/Pictures/family/*.jpg /sdcard/Pictures/Ambient/
 ```
 or with Send Files to TV / a file manager into `Download/Ambient`. Settings → *Rescan*.
+
+## 5. Verse of the day (NIV via API.Bible, optional)
+The **Verse of the day** home card (Settings › Home cards, or Settings › Verse of the day › Show on home) shows one short verse a
+day from the NIV, fetched from [API.Bible](https://api.bible) with your own free key. No Scripture text is in this app or repo;
+only a list of 366 references (`VerseRefs.kt`).
+1. Sign up at **api.bible**, create an app, choose the free **Starter** plan (non-commercial), and add **New International
+   Version** to it (Customize your app → "+"). Copy the app's API key. Keep it private: don't paste it into chats, issues or this repo.
+2. On the TV: Settings › Verse of the day › **Add API.Bible key**, scan the QR with your phone (same Wi-Fi), enter the code,
+   paste the key and press Save. The TV checks it once, finds the NIV, and stores the key only in the launcher's private
+   storage (excluded from backups and device transfer). (A private build can carry the key instead; see RELEASING.md.)
+3. The TV fetches today + the next 14 days at once (about one API call a day, far under Starter's 5,000/month), keeps them for
+   at most 30 days, and shows the verse and its reference with the short-form notice API.Bible allows when space is limited
+   (e.g. "Psalm 46:10 · NIV © 2011 Biblica, Inc. All rights reserved."). The full copyright text and "Powered by API.Bible —
+   api.bible" are always in Settings › Verse of the day (About & credits). **Show copyright on card** (default **On**) controls
+   the short notice; API.Bible's terms expect it, so leave it on unless the TV is purely for your own use. Each time the
+   verse is shown it sends API.Bible's anonymous FUMS usage report. Without a key the card says "Add your API.Bible key in Settings."
 
 ## Build
 `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.

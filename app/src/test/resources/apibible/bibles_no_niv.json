@@ -1,0 +1,4 @@
+{"data":[
+ {"id":"fixture-kjv-01","abbreviation":"engKJV","abbreviationLocal":"KJV","name":"King James (Authorised) Version"},
+ {"id":"fixture-nirv-01","abbreviation":"NIrV","abbreviationLocal":"NIrV","name":"New International Reader's Version"}
+]}

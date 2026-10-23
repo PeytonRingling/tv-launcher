@@ -1,0 +1,7 @@
+{"data":[
+ {"id":"fixture-kjv-01","dblId":"x1","abbreviation":"engKJV","abbreviationLocal":"KJV","name":"King James (Authorised) Version","language":{"id":"eng","name":"English"}},
+ {"id":"fixture-nirv-01","dblId":"x2","abbreviation":"NIrV","abbreviationLocal":"NIrV","name":"New International Reader's Version","language":{"id":"eng","name":"English"}},
+ {"id":"fixture-nivuk-01","dblId":"x3","abbreviation":"NIVUK","abbreviationLocal":"NIVUK","name":"New International Version (Anglicised)","language":{"id":"eng","name":"English"}},
+ {"id":"fixture-niv-01","dblId":"x4","abbreviation":"NIV","abbreviationLocal":"NIV","name":"New International Version","language":{"id":"eng","name":"English"}},
+ {"id":"fixture-web-01","dblId":"x5","abbreviation":"WEB","abbreviationLocal":"WEB","name":"World English Bible","language":{"id":"eng","name":"English"}}
+]}

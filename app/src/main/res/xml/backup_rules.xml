@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older (adb / cloud backup). The API.Bible key and the cached verse text never leave the TV. -->
+<full-backup-content>
+  <exclude domain="sharedpref" path="apibible_secret.xml" />
+  <exclude domain="sharedpref" path="verse_cache.xml" />
+</full-backup-content>

@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.graphics.asAndroidBitmap
 import com.github.takahirom.roborazzi.captureRoboImage
 import androidx.compose.foundation.background
@@ -24,6 +25,7 @@ import org.junit.Assert.assertTrue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.performSemanticsAction
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -108,6 +110,7 @@ class ScreensTest {
     st.weather = Weather(48.0, 2, 61.0, 34.0, true, System.currentTimeMillis(), listOf(
       Hour("6 PM", 46.0, 2, true), Hour("7 PM", 43.0, 0, false), Hour("8 PM", 41.0, 0, false), Hour("9 PM", 39.0, 3, false), Hour("10 PM", 37.0, 3, false)))
     st.inputs = listOf(InputUi("H1", "PlayStation 5", "HDMI 1 · eARC") {}, InputUi("H2", "Apple TV 4K", "HDMI 2") {}, InputUi("TV", "Live TV", "Antenna & channels") {})
+    st.place = WeatherPlace("10001", "New York City", "NY", 40.7484, -73.9967)
     st.wallpapers = Photos.builtins(ctx)
     st.photos = st.wallpapers
     val full = Photos.decode(ctx, Photo(asset = "wallpapers/$wall.jpg"), 1920)!!
@@ -431,6 +434,363 @@ class ScreensTest {
     }
     rule.waitForIdle()
     rule.onRoot().captureRoboImage("$out/08_icon_normalization.png")
+  }
+
+  // ======================= GitHub updater (v4.3) =======================
+  private val ghRel = GhRelease("v4.3", "4.3", 8, "tv-launcher-v4.3-vc8.apk", "https://example.invalid/x.apk", 1)
+  private fun ghShot(name: String, gh: GhUi, screen: Screen = Screen.UPDATE) = shot("../gh/$name", state()) {
+    it.versionLabel = "4.2 (build 7)"; it.canInstall = true; it.gh = gh
+    it.update = UpdateUi("http://192.168.1.42:8766/731402", "731402"); it.screen = screen
+  }
+  @Test fun ghChecking() = ghShot("G1_checking", GhUi(GhPhase.CHECKING, "Checking GitHub for updates…"))
+  @Test fun ghUpToDate() = ghShot("G2_up_to_date", GhUi(GhPhase.UP_TO_DATE, "You have the latest version (4.2).", ghRel.copy(versionName = "4.2", versionCode = 7)))
+  @Test fun ghAvailable() = ghShot("G3_update_available", GhUi(GhPhase.AVAILABLE, "Version 4.3 is available on GitHub.", ghRel))
+  @Test fun ghError() = ghShot("G4_error_rate_limited", GhUi(GhPhase.ERROR, "GitHub's limit for update checks was reached. Try again in about 25 min."))
+  @Test fun ghSettingsBadge() = ghShot("G5_settings_badge", GhUi(GhPhase.AVAILABLE, "Version 4.3 is available on GitHub.", ghRel), Screen.SETTINGS)
+  @Test fun ghDownloading() = shot("../gh/G6_downloading", state()) {
+    it.versionLabel = "4.2 (build 7)"; it.canInstall = true; it.gh = GhUi(GhPhase.DOWNLOADING, "Downloading version 4.3…", ghRel)
+    it.update = UpdateUi("http://192.168.1.42:8766/731402", "731402", UpdatePhase.RECEIVING, "Downloading 4.3… 48%", 0.48f); it.screen = Screen.UPDATE
+  }
+
+  // ======================= Weather location (ZIP) =======================
+  private val zipPlace = WeatherPlace("10001", "New York City", "NY", 40.7484, -73.9967)
+  @Test fun zipPicker() = shot("../updater/Z1_zip_picker", state()) { it.place = zipPlace; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPickerUnset() = shot("../updater/Z2_zip_picker_first_time", state()) { it.place = null; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPickerError() = shot("../updater/Z3_zip_error_unknown", state()) { it.place = zipPlace; it.zipStatus = "99999 isn't a known US ZIP code."; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPickerBusy() = shot("../updater/Z4_zip_looking_up", state()) { it.place = zipPlace; it.zipStatus = "…"; it.screen = Screen.WEATHER_ZIP }
+  @Test fun zipPrompt() = shot("../updater/Z5_home_weather_prompt", state()) { it.place = null; it.weather = null }
+  @Test fun zipSettingsRow() {
+    val st = state(); st.place = zipPlace
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    st.screen = Screen.SETTINGS
+    rule.mainClock.advanceTimeBy(1500); Thread.sleep(300)
+    rule.onAllNodesWithText("Weather location")[0].performScrollTo()
+    rule.mainClock.advanceTimeBy(1500)
+    rule.onRoot().captureRoboImage("../screens/updater/Z6_settings_weather_location.png")
+  }
+  @Test fun zipCardWithPlace() = shot("../updater/Z7_home_weather_card", state()) { it.place = zipPlace }
+
+  // ======================= Verse of the day (API.Bible) =======================
+  // Render fixtures use public-domain World English Bible text labelled WEB: no NIV text is stored in this repo.
+  // Notice renders: a made-up holder so the short form is visible ("WEB © 2026 Example Bible Society. All rights reserved.").
+  private val fakeNotice = "Render fixture © 2026 by Example Bible Society. Used by permission. All rights reserved worldwide."
+  private val webShort = Verse("2026-10-21", "PSA.46.10", "Psalms 46:10", "Be still, and know that I am God. I will be exalted among the nations. I will be exalted in the earth.",
+    fakeNotice, "fixture-fums", 0L)
+  private val webLong = Verse("2026-10-21", "ISA.41.10", "Isaiah 41:10", "Don't you be afraid, for I am with you. Don't be dismayed, for I am your God. I will strengthen you. Yes, I will help you. Yes, I will uphold you with the right hand of my righteousness.",
+    fakeNotice, "fixture-fums", 0L)
+  private fun verseState(v: Verse?, key: Boolean, wall: String = "canyon") = state(wall).apply {
+    verseKey = key; verseAbbr = "WEB"; verse = v
+    changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, HomeCard.WEATHER to CardSlot.RIGHT))
+  }
+  @Test fun verseShort() = shot("../verse/V1_home_verse_card_short_notice_on", verseState(webShort, true))
+  @Test fun verseShortNoNotice() = shot("../verse/V1b_home_verse_card_short_notice_off", verseState(webShort, true)) { it.changeVerseNotice(false) }
+  /** Both states through the real card: on = reference + short notice; off = reference only, no ©, no api.bible on the card. */
+  @Test fun verseNoticeStates() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(3) { rule.mainClock.advanceTimeBy(500); Thread.sleep(100) }
+    fun cardText() = rule.onAllNodes(androidx.compose.ui.test.hasText("Psalms", substring = true) or androidx.compose.ui.test.hasText("Psalms\u00A0", substring = true))
+      .fetchSemanticsNodes()
+      .flatMap { n -> n.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.Text) { emptyList() }.map { it.text.replace('\u00A0', ' ') } }
+    assertTrue(cardText().any { it.contains("Psalms 46:10") && it.contains("WEB © 2026 Example Bible Society. All rights reserved.") })
+    assertEquals(0, rule.onAllNodesWithText("api.bible", substring = true).fetchSemanticsNodes().size)
+    st.changeVerseNotice(false)
+    repeat(3) { rule.mainClock.advanceTimeBy(400); Thread.sleep(100) }
+    assertEquals(listOf("Psalms 46:10"), cardText().filter { it.startsWith("Psalms") })
+    assertTrue(cardText().none { it.contains("©") })
+    assertEquals(0, rule.onAllNodesWithText("api.bible", substring = true).fetchSemanticsNodes().size)
+  }
+  @Test fun verseLong() = shot("../verse/V2_home_verse_card_long", verseState(webLong, true, "fjord"))
+  @Test fun versePrompt() = shot("../verse/V3_home_verse_prompt_no_key", verseState(null, false))
+  @Test fun verseKeyScreen() = shot("../verse/V4_add_key_qr_screen", verseState(null, false)) {
+    it.keyUi = KeyUi("http://192.168.1.42:8765/482913", "482913"); it.screen = Screen.VERSE_KEY }
+  @Test fun verseKeySaved() = shot("../verse/V5_key_saved", verseState(null, true)) {
+    it.verseAbbr = "NIV"; it.keyUi = KeyUi("http://192.168.1.42:8765/482913", "482913", KeyPhase.SAVED, "Saved. New International Version (NIV) found; today's verse is on its way."); it.screen = Screen.VERSE_KEY }
+  @Test fun verseKeyError() = shot("../verse/V6_key_rejected", verseState(null, false)) {
+    it.keyUi = KeyUi("http://192.168.1.42:8765/482913", "482913", KeyPhase.ERROR, "API.Bible didn't accept this key. Copy it again from your API.Bible dashboard."); it.screen = Screen.VERSE_KEY }
+  @Test fun verseErrorCard() = shot("../verse/V7_home_verse_invalid_key", verseState(null, true)) { it.verseStatus = VerseStatus.INVALID_KEY }
+  @Test fun verseSideRail() = shot("../verse/V8_side_rail_verse_card", verseState(webLong, true, "highlands")) { it.changeLayout(HomeLayout.SIDE_RAIL) }
+  @Test fun verseSettings() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    st.screen = Screen.SETTINGS
+    rule.mainClock.advanceTimeBy(1500); Thread.sleep(300)
+    rule.onAllNodesWithText("Remove API.Bible key")[0].performScrollTo()
+    rule.mainClock.advanceTimeBy(1500)
+    rule.onRoot().captureRoboImage("../screens/verse/V9_settings_verse_section.png")
+  }
+  /** A refreshed verse with identical text doesn't animate; a new day crossfades (mid-fade frame). */
+  @Test fun verseCrossfade() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(3) { rule.mainClock.advanceTimeBy(500); Thread.sleep(200) }
+    st.verse = webShort.copy(fetchedAt = 99L, fums = "other")          // same text: nothing to animate
+    rule.mainClock.advanceTimeBy(16)
+    assertEquals(1, rule.onAllNodesWithText(webShort.text).fetchSemanticsNodes().size)
+    st.verse = webLong
+    rule.mainClock.advanceTimeBy(380); Thread.sleep(150)
+    rule.onRoot().captureRoboImage("../screens/verse/V10_crossfade_mid.png")
+    repeat(3) { rule.mainClock.advanceTimeBy(500); Thread.sleep(100) }
+    assertEquals(0, rule.onAllNodesWithText(webShort.text).fetchSemanticsNodes().size)
+  }
+
+  // ======================= Equal-size side cards (v4.3.2) =======================
+  private val webHuge = webLong.copy(text = webLong.text + " Behold, all those who are incensed against you will be disappointed and confounded. Those who strive with you will be like nothing, and shall perish.")
+  private fun sides(v: Verse, other: HomeCard, notice: Boolean = true, wall: String = "canyon") = verseState(v, true, wall).apply {
+    changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, other to CardSlot.RIGHT))
+    if (!notice) changeVerseNotice(false)
+    if (other == HomeCard.NOTE) note = "Pizza night Friday. Grandma visits Sunday at 2."
+    if (other == HomeCard.COUNTDOWN) countdown = Countdown("Christmas", 12, 25)
+    if (other == HomeCard.RECENT) recents = listOf("com.netflix.ninja", "com.google.android.youtube.tv", "com.disney.disneyplus")
+    if (other == HomeCard.PHOTO) photoOfDay = Photos.decode(ctx, Photo(asset = "wallpapers/coast.jpg"), 640)!!.asImageBitmap()
+  }
+  @Test fun s01() = shot("../sizes/S1_verse_short_notice_on_weather", sides(webShort, HomeCard.WEATHER))
+  @Test fun s02() = shot("../sizes/S2_verse_short_notice_off_weather", sides(webShort, HomeCard.WEATHER, false))
+  @Test fun s03() = shot("../sizes/S3_verse_long_notice_on_weather", sides(webLong, HomeCard.WEATHER, wall = "fjord"))
+  @Test fun s04() = shot("../sizes/S4_verse_long_notice_off_weather", sides(webLong, HomeCard.WEATHER, false, "fjord"))
+  @Test fun s05() = shot("../sizes/S5_verse_huge_notice_on_truncates", sides(webHuge, HomeCard.WEATHER, wall = "highlands"))
+  @Test fun s06() = shot("../sizes/S6_verse_photo", sides(webShort, HomeCard.PHOTO))
+  @Test fun s07() = shot("../sizes/S7_verse_inputs", sides(webLong, HomeCard.INPUTS))
+  @Test fun s08() = shot("../sizes/S8_verse_weather3", sides(webShort, HomeCard.WEATHER3))
+  @Test fun s09() = shot("../sizes/S9_verse_recent", sides(webShort, HomeCard.RECENT))
+  @Test fun s10() = shot("../sizes/S10_verse_date", sides(webShort, HomeCard.DATE, false))
+  @Test fun s11() = shot("../sizes/S11_verse_note", sides(webShort, HomeCard.NOTE))
+  @Test fun s12() = shot("../sizes/S12_verse_countdown", sides(webShort, HomeCard.COUNTDOWN))
+  @Test fun s13() = shot("../sizes/S13_verse_toggles", sides(webShort, HomeCard.TOGGLES))
+  @Test fun s14() = shot("../sizes/S14_cinematic_verse_weather", sides(webLong, HomeCard.WEATHER, wall = "coast")) { it.changeLayout(HomeLayout.CINEMATIC) }
+  @Test fun s16() = shot("../sizes/S16_two_cards_per_side_natural_heights", sides(webShort, HomeCard.WEATHER, false)) {
+    it.changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, HomeCard.DATE to CardSlot.LEFT, HomeCard.WEATHER to CardSlot.RIGHT, HomeCard.INPUTS to CardSlot.RIGHT)) }
+  @Test fun s15() = shot("../sizes/S15_weather_left_inputs_right", state()) { it.changeCards(linkedMapOf(HomeCard.WEATHER to CardSlot.LEFT, HomeCard.INPUTS to CardSlot.RIGHT)) }
+
+  /** Every card type opposite the verse card (short/long/huge, notice on/off) has exactly the verse card's size, mirrored about the clock. */
+  @Test fun sideCardsSameSize() {
+    val st = verseState(webShort, true)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    val screenW = rule.onRoot().fetchSemanticsNode().boundsInRoot.width
+    fun b(c: HomeCard) = rule.onNode(androidx.compose.ui.test.hasTestTag("card-${c.name}"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+    val expected = with(rule.density) { androidx.compose.ui.geometry.Size(SideCardWidth.toPx(), SideCardHeight.toPx()) }
+    for (v in listOf(webShort, webLong, webHuge)) for (notice in listOf(true, false))
+      for (other in HomeCard.values().filter { it != HomeCard.VERSE }) {
+        st.verse = v; st.changeVerseNotice(notice)
+        st.changeCards(linkedMapOf(HomeCard.VERSE to CardSlot.LEFT, other to CardSlot.RIGHT))
+        repeat(3) { rule.mainClock.advanceTimeBy(400) }
+        val l = b(HomeCard.VERSE); val r = b(other); val msg = "${v.reference} notice=$notice vs $other: $l / $r"
+        assertEquals(msg, expected.width, l.width, 0.5f); assertEquals(msg, expected.height, l.height, 0.5f)
+        assertEquals(msg, l.width, r.width, 0.5f); assertEquals(msg, l.height, r.height, 0.5f)
+        assertEquals(msg, l.top, r.top, 0.5f); assertEquals(msg, l.left, screenW - r.right, 0.5f)
+        // the verse text and reference stay inside the card
+        rule.onAllNodes(androidx.compose.ui.test.hasText(v.text.take(20), substring = true), useUnmergedTree = true).fetchSemanticsNodes().forEach { n ->
+          assertTrue("$msg text ${n.boundsInRoot}", n.boundsInRoot.bottom <= l.bottom - 10f) }
+        rule.onAllNodes(androidx.compose.ui.test.hasText(v.reference.take(6), substring = true), useUnmergedTree = true).fetchSemanticsNodes().forEach { n ->
+          assertTrue("$msg ref ${n.boundsInRoot}", n.boundsInRoot.bottom <= l.bottom - 10f) }
+      }
+  }
+
+  // ======================= Dock focus glow (v4.3.3) =======================
+  private val focusOut = System.getProperty("focusOut") ?: "../screens/focus"
+  /** Focused YouTube tile at rest, then frames of focus moving YouTube → Netflix (DPAD right). */
+  @Test fun focusGlowFrames() {
+    val st = state()
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(4) { rule.mainClock.advanceTimeBy(500); Thread.sleep(100) }
+    rule.onRoot().captureRoboImage("$focusOut/rest.png")
+    rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+    var t = 0L
+    for (ms in listOf(16L, 50L, 100L, 160L, 240L, 400L, 900L)) {
+      rule.mainClock.advanceTimeBy(ms - t); t = ms
+      rule.onRoot().captureRoboImage("$focusOut/move_${ms}ms.png")
+    }
+  }
+
+  /** The halo mask falls off monotonically from the tile edge with no step bigger than ~1/255 (smoothed over the 4px dither). */
+  @Test fun focusGlowIsSmooth() {
+    val w = 112; val m = with(rule.density) { SoftGlow.margin.toPx() }   // 56dp tile at xhdpi
+    val cov = SoftGlow.coverage(w, w, m.toInt(), m / 4f); val W = w + 2 * m.toInt(); val y = W / 2
+    val row = (0..m.toInt()).map { cov[y * W + m.toInt() - it] }   // tile edge → outward
+    for (i in 1 until row.size) assertTrue("coverage not monotonic at $i: ${row[i - 1]} -> ${row[i]}", row[i] <= row[i - 1] + 1e-6f)
+    val bmp = SoftGlow.halo(w, w, m).asAndroidBitmap()
+    val alpha = (0 until W).map { x -> (0 until 4).sumOf { dy -> android.graphics.Color.alpha(bmp.getPixel(x, y + dy)) } / 4.0 }
+    val out = (0..m.toInt()).map { alpha[m.toInt() - it] }
+    println("GLOW_ALPHA_ROW edge->out: " + out.joinToString(" ") { "%.1f".format(it) })
+    println("GLOW_COVERAGE_ROW edge->out: " + row.joinToString(" ") { "%.3f".format(it) })
+    for (i in 1 until out.size) assertTrue("alpha step at $i: ${out[i - 1]} -> ${out[i]}", out[i] <= out[i - 1] + 1.0)
+  }
+
+  // ======================= Styled homes (v4.4) =======================
+  private val styleKeys = mapOf(HomeLayout.RETRO to Key.DirectionDown, HomeLayout.MAGAZINE to Key.DirectionDown)
+  private val styleShots = listOf(HomeLayout.RETRO to "H1_retro", HomeLayout.CONSOLE to "H2_console", HomeLayout.MAGAZINE to "H3_magazine",
+    HomeLayout.NEON to "H4_neon", HomeLayout.SPACE to "H5_space", HomeLayout.COMIC to "H6_comic", HomeLayout.ARCADE to "H7_arcade", HomeLayout.SHELF to "H8_shelf")
+  private fun styleState(l: HomeLayout, wall: String = "canyon") = verseState(webShort, true, wall).apply {
+    changeCards(linkedMapOf(HomeCard.WEATHER to CardSlot.LEFT, HomeCard.VERSE to CardSlot.RIGHT)); changeLayout(l)
+    photoOfDay = Photos.decode(ctx, Photo(asset = "wallpapers/coast.jpg"), 640)!!.asImageBitmap()
+  }
+  private fun focusedTag(): String? = rule.onAllNodes(androidx.compose.ui.test.isFocused(), useUnmergedTree = true).fetchSemanticsNodes()
+    .firstNotNullOfOrNull { it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.TestTag) { null } }
+  /** Renders home (entry settled), then after two D-pad moves (focused state), plus mid-entry and mid-launch frames. */
+  private fun styleRender(l: HomeLayout, name: String, frames: Boolean = true) {
+    val st = styleState(l)
+    val dir = styleKeys[l] ?: Key.DirectionRight
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    if (frames) { rule.mainClock.advanceTimeBy(280); Thread.sleep(150); rule.onRoot().captureRoboImage("../screens/styles/${name}_c_entry_mid.png") }
+    repeat(5) { rule.mainClock.advanceTimeBy(500); Thread.sleep(120) }
+    rule.onRoot().captureRoboImage("../screens/styles/${name}_a_home.png")
+    val first = focusedTag()
+    assertEquals("$l: first app focused", "${stylePrefix(l)}:com.google.android.youtube.tv", first)
+    rule.onRoot().performKeyInput { pressKey(dir) }; rule.mainClock.advanceTimeBy(250)
+    rule.onRoot().performKeyInput { pressKey(dir) }
+    rule.mainClock.advanceTimeBy(120); Thread.sleep(80)
+    if (frames) rule.onRoot().captureRoboImage("../screens/styles/${name}_d_focus_moving.png")
+    repeat(3) { rule.mainClock.advanceTimeBy(400); Thread.sleep(80) }
+    assertEquals("$l: D-pad moved focus two items", "${stylePrefix(l)}:com.disney.disneyplus", focusedTag())
+    rule.onRoot().captureRoboImage("../screens/styles/${name}_b_focused.png")
+    if (frames) {   // launch transition, mid-way
+      rule.onRoot().performKeyInput { pressKey(Key.DirectionCenter) }
+      rule.mainClock.advanceTimeBy(260); Thread.sleep(80)
+      rule.onRoot().captureRoboImage("../screens/styles/${name}_e_launch_mid.png")
+    }
+  }
+  @Test fun h1Retro() = styleRender(HomeLayout.RETRO, "H1_retro")
+  @Test fun h2Console() = styleRender(HomeLayout.CONSOLE, "H2_console")
+  @Test fun h3Magazine() = styleRender(HomeLayout.MAGAZINE, "H3_magazine")
+  @Test fun h4Neon() = styleRender(HomeLayout.NEON, "H4_neon")
+  @Test fun h5Space() = styleRender(HomeLayout.SPACE, "H5_space")
+  @Test fun h6Comic() = styleRender(HomeLayout.COMIC, "H6_comic")
+  @Test fun h7Arcade() = styleRender(HomeLayout.ARCADE, "H7_arcade")
+  @Test fun h8Shelf() = styleRender(HomeLayout.SHELF, "H8_shelf")
+  // ---- Polish critique (v4.4.1): every style in many data states, both TV densities, scroll edges.
+  private val webTiny = webShort.copy(reference = "John 11:35", text = "Jesus wept.")
+  private fun settle(n: Int = 4) = repeat(n) { rule.mainClock.advanceTimeBy(400); Thread.sleep(60) }
+  private fun focusTag(tag: String) { rule.onNode(androidx.compose.ui.test.hasTestTag(tag), useUnmergedTree = true).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus); settle(3) }
+  private val lastKeys = mapOf(
+    HomeLayout.RETRO to List(10) { Key.DirectionDown }, HomeLayout.MAGAZINE to List(10) { Key.DirectionDown },
+    HomeLayout.SPACE to listOf(Key.DirectionLeft),
+    HomeLayout.COMIC to listOf(Key.DirectionDown) + List(6) { Key.DirectionRight }, HomeLayout.ARCADE to listOf(Key.DirectionDown) + List(6) { Key.DirectionRight })
+  private fun critique(l: HomeLayout, name: String, dir: String = "../screens/critique") {
+    val st = styleState(l); val p = stylePrefix(l)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    settle(6)
+    fun cap(s: String) = rule.onRoot().captureRoboImage("$dir/${name}_$s.png")
+    cap("1_home_short_notice")
+    st.verse = webLong; settle(); cap("2_long_notice")
+    st.changeVerseNotice(false); settle(); cap("3_long_nonotice")
+    st.verse = webTiny; settle(); cap("4_tiny_nonotice")
+    st.verse = webHuge; st.changeVerseNotice(true); settle(); cap("5_huge_notice")
+    st.verse = webShort; st.changeVerseNotice(false); settle()
+    // reach the last item the way a remote does (D-pad), falling back to a direct focus request for grids
+    val k = lastKeys[l] ?: List(12) { Key.DirectionRight }
+    k.forEach { key -> rule.onRoot().performKeyInput { pressKey(key) }; rule.mainClock.advanceTimeBy(140) }
+    settle(3)
+    if (focusedTag() != "$p:settings") focusTag("$p:settings")
+    assertEquals("$l: last item reachable", "$p:settings", focusedTag())
+    cap("6_last_focused")
+    focusTag("$p:all"); cap("7_allapps_focused")
+    focusTag("$p:com.google.android.youtube.tv"); cap("8_first_focused")
+    st.verse = null; st.weather = null; settle(); cap("9_no_verse_no_weather")
+  }
+  @Test fun k1() = critique(HomeLayout.RETRO, "H1_retro")
+  @Test fun k2() = critique(HomeLayout.CONSOLE, "H2_console")
+  @Test fun k3() = critique(HomeLayout.MAGAZINE, "H3_magazine")
+  @Test fun k4() = critique(HomeLayout.NEON, "H4_neon")
+  @Test fun k5() = critique(HomeLayout.SPACE, "H5_space")
+  @Test fun k6() = critique(HomeLayout.COMIC, "H6_comic")
+  @Test fun k7() = critique(HomeLayout.ARCADE, "H7_arcade")
+  @Test fun k8() = critique(HomeLayout.SHELF, "H8_shelf")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m1() = critique(HomeLayout.RETRO, "H1_retro", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m2() = critique(HomeLayout.CONSOLE, "H2_console", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m3() = critique(HomeLayout.MAGAZINE, "H3_magazine", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m4() = critique(HomeLayout.NEON, "H4_neon", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m5() = critique(HomeLayout.SPACE, "H5_space", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m6() = critique(HomeLayout.COMIC, "H6_comic", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m7() = critique(HomeLayout.ARCADE, "H7_arcade", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m8() = critique(HomeLayout.SHELF, "H8_shelf", "../screens/critique720")
+  /** Arcade attract mode after 25 s idle; the first key only wakes it (focus doesn't move). */
+  @Test fun h7ArcadeAttract() {
+    val st = styleState(HomeLayout.ARCADE)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(4) { rule.mainClock.advanceTimeBy(500); Thread.sleep(80) }
+    rule.mainClock.advanceTimeBy(26_000); Thread.sleep(150); rule.mainClock.advanceTimeBy(700)
+    rule.onRoot().captureRoboImage("../screens/styles/H7_arcade_f_attract.png")
+    rule.mainClock.advanceTimeBy(340); Thread.sleep(80)       // the other half of the INSERT COIN blink
+    rule.onRoot().captureRoboImage("../screens/styles/H7_arcade_g_attract_blink.png")
+    rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+    rule.mainClock.advanceTimeBy(800)
+    assertEquals("arcade:com.google.android.youtube.tv", focusedTag())
+    rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
+    rule.mainClock.advanceTimeBy(600)
+    assertEquals("arcade:com.netflix.ninja", focusedTag())
+  }
+  /**
+   * Ambient motion only runs while the styled home can be seen: it stops when another screen replaces home, while an
+   * overlay (the app menu) is open, in ambient mode, and when the activity is paused (an app on top), then resumes.
+   */
+  private fun ambientStops(l: HomeLayout) {
+    val st = styleState(l)
+    val owner = object : androidx.lifecycle.LifecycleOwner {
+      val reg = androidx.lifecycle.LifecycleRegistry(this).apply { currentState = androidx.lifecycle.Lifecycle.State.RESUMED }
+      override val lifecycle: androidx.lifecycle.Lifecycle get() = reg
+    }
+    rule.mainClock.autoAdvance = false
+    rule.setContent {
+      androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLifecycleOwner provides owner) { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    }
+    settle(3)
+    // state written from the test thread: push the snapshot change to the recomposer before advancing the clock
+    fun commit() = androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+    fun ticksOver(ms: Long): Long { val a = AmbientProbe.ticks; repeat((ms / 100).toInt()) { rule.mainClock.advanceTimeBy(100) }; return AmbientProbe.ticks - a }
+    assertTrue("$l: ambient runs on home", ticksOver(1000) >= 10)
+    st.screen = Screen.SETTINGS; commit(); settle(2)
+    assertEquals("$l: stopped while Settings replaces home", 0L, ticksOver(1500))
+    st.screen = Screen.HOME; commit(); settle(3)
+    assertTrue("$l: runs again back home", ticksOver(1000) >= 10)
+    st.menuFor = st.favoriteApps.first(); commit(); settle(2)
+    assertEquals("$l: stopped under the app menu", 0L, ticksOver(1500))
+    st.menuFor = null; commit(); settle(3)
+    assertTrue("$l: runs again after the menu", ticksOver(1000) >= 10)
+    owner.reg.currentState = androidx.lifecycle.Lifecycle.State.STARTED; commit(); settle(1)   // paused: an app is on top
+    assertEquals("$l: stopped while paused", 0L, ticksOver(1500))
+    owner.reg.currentState = androidx.lifecycle.Lifecycle.State.RESUMED; commit(); settle(2)
+    assertTrue("$l: runs again when resumed", ticksOver(1000) >= 10)
+    st.ambient = true; commit(); settle(2)
+    assertEquals("$l: stopped in ambient mode", 0L, ticksOver(1500))
+  }
+  // Console and Magazine have no ambient loop at all (nothing runs between key presses).
+  @Test fun ambientStopsRetro() = ambientStops(HomeLayout.RETRO)
+  @Test fun ambientStopsNeon() = ambientStops(HomeLayout.NEON)
+  @Test fun ambientStopsSpace() = ambientStops(HomeLayout.SPACE)
+  @Test fun ambientStopsComic() = ambientStops(HomeLayout.COMIC)
+  @Test fun ambientStopsArcade() = ambientStops(HomeLayout.ARCADE)
+  @Test fun ambientStopsShelf() = ambientStops(HomeLayout.SHELF)
+  @Test fun ambientNeverRunsOnConsoleOrMagazine() {
+    val st = styleState(HomeLayout.CONSOLE)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    settle(3)
+    val a = AmbientProbe.ticks; repeat(15) { rule.mainClock.advanceTimeBy(100) }
+    assertEquals(0L, AmbientProbe.ticks - a)
+    st.changeLayout(HomeLayout.MAGAZINE); settle(3)
+    val b = AmbientProbe.ticks; repeat(15) { rule.mainClock.advanceTimeBy(100) }
+    assertEquals(0L, AmbientProbe.ticks - b)
+  }
+  /** Hold-OK/MENU opens the app menu from a styled home, and closing it restores focus to the same item. */
+  @Test fun stylesMenuOpensFromHoldOk() {
+    val st = styleState(HomeLayout.SPACE)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    repeat(4) { rule.mainClock.advanceTimeBy(500); Thread.sleep(80) }
+    rule.onRoot().performKeyInput { keyDown(Key.Menu); keyUp(Key.Menu) }
+    rule.mainClock.advanceTimeBy(500)
+    assertEquals("com.google.android.youtube.tv", st.menuFor?.pkg)
+    st.menuFor = null; rule.mainClock.advanceTimeBy(600)
+    assertEquals("focus restored after the overlay", "space:com.google.android.youtube.tv", focusedTag())
   }
 }
 
