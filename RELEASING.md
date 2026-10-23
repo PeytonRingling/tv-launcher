@@ -25,8 +25,8 @@ The keystore is **not** in this repo (`*.keystore`, `*.jks`, `*.p12` are git-ign
 ./gradlew assembleRelease -Pvc=8 -Pvn=4.3
 # -> app/build/outputs/apk/release/app-release.apk
 ```
-* `versionCode` **must be higher** than the installed one, or the updater refuses it. History: v4.0=5, v4.1=6, v4.2=7, v4.3=8.
-  The defaults in `app/build.gradle.kts` track the current release (8 / "4.3"), so always pass `-Pvc/-Pvn` for a new one
+* `versionCode` **must be higher** than the installed one, or the updater refuses it. History: v4.0=5, v4.1=6, v4.2=7, v4.3=8, v4.4.2=14 (private Drive builds used 9–13).
+  The defaults in `app/build.gradle.kts` track the current release (14 / "4.4.2"), so always pass `-Pvc/-Pvn` for a new one
   and update the defaults in the same commit.
 * Verify before delivering:
   ```bash
