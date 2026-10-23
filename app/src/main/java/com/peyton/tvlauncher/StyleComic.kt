@@ -24,6 +24,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import kotlin.math.PI
@@ -35,6 +37,7 @@ import kotlin.math.sin
 private val InkBlack = Color(0xFF111111)
 private val ComicYellow = Color(0xFFFFE14A)
 private val ComicRed = Color(0xFFE8322B)
+private val TopTierH = 196.dp
 private val Gutter = 12.dp
 private val PanelW = 142.dp
 private val PanelH = 128.dp
@@ -81,9 +84,28 @@ fun ComicHome(env: HomeEnv) {
   val colScroll by animateFloatAsState((drv.focused % cols - 4).coerceIn(0, (cols - 6).coerceAtLeast(0)).toFloat(), StyleSpring, label = "cs")
 
   Box(Modifier.fillMaxSize().background(InkBlack).testTag("style-comic")) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp)) {
+    Box(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 18.dp)) {
+      // The app grid is composed first and the top tier after it, so a focused panel's POW burst (and its scale/tilt)
+      // can only ever pass *under* the clock, weather and verse panels, never over their captions.
+      // ---------------- bottom tiers: the apps as panels
+      Box(Modifier.fillMaxSize().padding(top = TopTierH + Gutter)) {
+        // POW bursts live on their own layer *under* every panel: they flare out through the gutters and round the
+        // focused panel's tilted edges, but can never cover another panel's art or a caption.
+        Column(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).offset { IntOffset((-(colScroll * (PanelW + Gutter).toPx())).roundToInt(), 0) },
+          verticalArrangement = Arrangement.spacedBy(Gutter)) {
+          for (r in 0 until (n + cols - 1) / cols) Row(horizontalArrangement = Arrangement.spacedBy(Gutter)) {
+            for (c in 0 until cols) { val i = r * cols + c; if (i < n) PowBurst(i, drv) }
+          }
+        }
+        Column(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).offset { IntOffset((-(colScroll * (PanelW + Gutter).toPx())).roundToInt(), 0) },
+          verticalArrangement = Arrangement.spacedBy(Gutter)) {
+          for (r in 0 until (n + cols - 1) / cols) Row(horizontalArrangement = Arrangement.spacedBy(Gutter)) {
+            for (c in 0 until cols) { val i = r * cols + c; if (i < n) AppPanel(env, items, i, drv, fx, nav, t) }
+          }
+        }
+      }
       // ---------------- top tier: clock · weather · verse
-      Row(Modifier.fillMaxWidth().height(196.dp), horizontalArrangement = Arrangement.spacedBy(Gutter)) {
+      Row(Modifier.fillMaxWidth().height(TopTierH), horizontalArrangement = Arrangement.spacedBy(Gutter)) {
         ComicPanel(Color(0xFF4FC3F7), Modifier.weight(1.05f).fillMaxHeight(), fx, 0, speedLines = true) {
           Caption("MEANWHILE, AT HOME\u2026", Modifier.padding(10.dp))
           Column(Modifier.align(Alignment.Center).padding(top = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -104,16 +126,6 @@ fun ComicHome(env: HomeEnv) {
         ComicPanel(Color(0xFFF06292), Modifier.weight(1.25f).fillMaxHeight(), fx, 2) {
           SpeechBubble(st, Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 34.dp))
           st.verse?.let { v -> Caption(v.reference.uppercase() + (StyleData.notice(st)?.let { "  \u00B7  $it" } ?: ""), Modifier.align(Alignment.BottomEnd).padding(8.dp), small = true, maxLines = 2) }
-        }
-      }
-      Spacer(Modifier.height(Gutter))
-      // ---------------- bottom tiers: the apps as panels
-      Box(Modifier.fillMaxWidth().weight(1f)) {
-        Column(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).graphicsLayer { translationX = -colScroll * (PanelW + Gutter).toPx() },
-          verticalArrangement = Arrangement.spacedBy(Gutter)) {
-          for (r in 0 until (n + cols - 1) / cols) Row(horizontalArrangement = Arrangement.spacedBy(Gutter)) {
-            for (c in 0 until cols) { val i = r * cols + c; if (i < n) AppPanel(env, items, i, drv, fx, nav, t) }
-          }
         }
       }
     }
@@ -220,28 +232,37 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.comicWeather(code: 
   }
 }
 
+/** The focused panel's starburst, on the layer beneath the panels; same tilt as the panel it belongs to. */
+@Composable
+private fun PowBurst(i: Int, drv: FocusDriver) {
+  Box(Modifier.size(PanelW, PanelH).graphicsLayer { rotationZ = (if (i % 2 == 0) -2.5f else 2.5f) * drv.k(i) }.drawWithCache {
+    val burst = burstPath(12, 0.7f, i + 3)
+    onDrawBehind {
+      val k = drv.k(i)
+      if (k > 0.01f) {
+        val r = size.maxDimension * (0.72f + 0.3f * k)
+        translate(size.width / 2, size.height / 2) { scale(r * k, r * k, Offset.Zero) { drawPath(burst, ComicYellow); drawPath(burst, ComicRed, style = Stroke(0.03f)) } }
+      }
+    }
+  })
+}
+
 @Composable
 private fun AppPanel(env: HomeEnv, items: List<StyleItem>, i: Int, drv: FocusDriver, fx: StyleFx, nav: StyleNav, t: State<Float>) {
   val item = items[i]
   Box(Modifier.zIndex(if (drv.focused == i) 2f else 0f).size(PanelW, PanelH)
     .graphicsLayer {
-      val e = StyleDecel.transform(((fx.enter.value - 0.2f - 0.035f * i.coerceAtMost(12)) / 0.4f).coerceIn(0f, 1f))
+      val e = StyleDecel.transform(stagger(fx.enter.value, 0.2f, 0.035f, i, 0.4f))
       val k = drv.k(i)
       val s = (1.3f - 0.3f * e) * (1f + 0.12f * k); scaleX = s; scaleY = s
       rotationZ = (1f - e) * (if (i % 2 == 0) 7f else -6f) + (if (i % 2 == 0) -2.5f else 2.5f) * k
       alpha = e
     }
     .drawWithCache {
-      val burst = burstPath(12, 0.7f, i + 3)
       val dots = tiledBrush(benDay(8.dp.toPx().toInt().coerceAtLeast(5)))
       val dotTint = ColorFilter.tint(darken(item.tint, 0.35f), BlendMode.SrcIn)
       val bg = lighten(item.tint, 0.35f)
       onDrawBehind {
-        val k = drv.k(i)
-        if (k > 0.01f) {
-          val r = size.maxDimension * (0.55f + 0.25f * k)
-          translate(size.width / 2, size.height / 2) { scale(r * k, r * k, Offset.Zero) { drawPath(burst, ComicYellow); drawPath(burst, ComicRed, style = Stroke(0.03f)) } }
-        }
         drawRect(bg); drawRect(dots, colorFilter = dotTint, alpha = 0.6f)
       }
     }

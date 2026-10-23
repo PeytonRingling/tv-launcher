@@ -25,6 +25,7 @@ import org.junit.Assert.assertTrue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.performSemanticsAction
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -663,6 +664,53 @@ class ScreensTest {
   @Test fun h6Comic() = styleRender(HomeLayout.COMIC, "H6_comic")
   @Test fun h7Arcade() = styleRender(HomeLayout.ARCADE, "H7_arcade")
   @Test fun h8Shelf() = styleRender(HomeLayout.SHELF, "H8_shelf")
+  // ---- Polish critique (v4.4.1): every style in many data states, both TV densities, scroll edges.
+  private val webTiny = webShort.copy(reference = "John 11:35", text = "Jesus wept.")
+  private fun settle(n: Int = 4) = repeat(n) { rule.mainClock.advanceTimeBy(400); Thread.sleep(60) }
+  private fun focusTag(tag: String) { rule.onNode(androidx.compose.ui.test.hasTestTag(tag), useUnmergedTree = true).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus); settle(3) }
+  private val lastKeys = mapOf(
+    HomeLayout.RETRO to List(10) { Key.DirectionDown }, HomeLayout.MAGAZINE to List(10) { Key.DirectionDown },
+    HomeLayout.SPACE to listOf(Key.DirectionLeft),
+    HomeLayout.COMIC to listOf(Key.DirectionDown) + List(6) { Key.DirectionRight }, HomeLayout.ARCADE to listOf(Key.DirectionDown) + List(6) { Key.DirectionRight })
+  private fun critique(l: HomeLayout, name: String, dir: String = "../screens/critique") {
+    val st = styleState(l); val p = stylePrefix(l)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    settle(6)
+    fun cap(s: String) = rule.onRoot().captureRoboImage("$dir/${name}_$s.png")
+    cap("1_home_short_notice")
+    st.verse = webLong; settle(); cap("2_long_notice")
+    st.changeVerseNotice(false); settle(); cap("3_long_nonotice")
+    st.verse = webTiny; settle(); cap("4_tiny_nonotice")
+    st.verse = webHuge; st.changeVerseNotice(true); settle(); cap("5_huge_notice")
+    st.verse = webShort; st.changeVerseNotice(false); settle()
+    // reach the last item the way a remote does (D-pad), falling back to a direct focus request for grids
+    val k = lastKeys[l] ?: List(12) { Key.DirectionRight }
+    k.forEach { key -> rule.onRoot().performKeyInput { pressKey(key) }; rule.mainClock.advanceTimeBy(140) }
+    settle(3)
+    if (focusedTag() != "$p:settings") focusTag("$p:settings")
+    assertEquals("$l: last item reachable", "$p:settings", focusedTag())
+    cap("6_last_focused")
+    focusTag("$p:all"); cap("7_allapps_focused")
+    focusTag("$p:com.google.android.youtube.tv"); cap("8_first_focused")
+    st.verse = null; st.weather = null; settle(); cap("9_no_verse_no_weather")
+  }
+  @Test fun k1() = critique(HomeLayout.RETRO, "H1_retro")
+  @Test fun k2() = critique(HomeLayout.CONSOLE, "H2_console")
+  @Test fun k3() = critique(HomeLayout.MAGAZINE, "H3_magazine")
+  @Test fun k4() = critique(HomeLayout.NEON, "H4_neon")
+  @Test fun k5() = critique(HomeLayout.SPACE, "H5_space")
+  @Test fun k6() = critique(HomeLayout.COMIC, "H6_comic")
+  @Test fun k7() = critique(HomeLayout.ARCADE, "H7_arcade")
+  @Test fun k8() = critique(HomeLayout.SHELF, "H8_shelf")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m1() = critique(HomeLayout.RETRO, "H1_retro", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m2() = critique(HomeLayout.CONSOLE, "H2_console", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m3() = critique(HomeLayout.MAGAZINE, "H3_magazine", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m4() = critique(HomeLayout.NEON, "H4_neon", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m5() = critique(HomeLayout.SPACE, "H5_space", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m6() = critique(HomeLayout.COMIC, "H6_comic", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m7() = critique(HomeLayout.ARCADE, "H7_arcade", "../screens/critique720")
+  @Config(sdk = [34], qualifiers = "w960dp-h540dp-land-television-tvdpi") @Test fun m8() = critique(HomeLayout.SHELF, "H8_shelf", "../screens/critique720")
   /** Arcade attract mode after 25 s idle; the first key only wakes it (focus doesn't move). */
   @Test fun h7ArcadeAttract() {
     val st = styleState(HomeLayout.ARCADE)
@@ -671,12 +719,66 @@ class ScreensTest {
     repeat(4) { rule.mainClock.advanceTimeBy(500); Thread.sleep(80) }
     rule.mainClock.advanceTimeBy(26_000); Thread.sleep(150); rule.mainClock.advanceTimeBy(700)
     rule.onRoot().captureRoboImage("../screens/styles/H7_arcade_f_attract.png")
+    rule.mainClock.advanceTimeBy(340); Thread.sleep(80)       // the other half of the INSERT COIN blink
+    rule.onRoot().captureRoboImage("../screens/styles/H7_arcade_g_attract_blink.png")
     rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
     rule.mainClock.advanceTimeBy(800)
     assertEquals("arcade:com.google.android.youtube.tv", focusedTag())
     rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
     rule.mainClock.advanceTimeBy(600)
     assertEquals("arcade:com.netflix.ninja", focusedTag())
+  }
+  /**
+   * Ambient motion only runs while the styled home can be seen: it stops when another screen replaces home, while an
+   * overlay (the app menu) is open, in ambient mode, and when the activity is paused (an app on top), then resumes.
+   */
+  private fun ambientStops(l: HomeLayout) {
+    val st = styleState(l)
+    val owner = object : androidx.lifecycle.LifecycleOwner {
+      val reg = androidx.lifecycle.LifecycleRegistry(this).apply { currentState = androidx.lifecycle.Lifecycle.State.RESUMED }
+      override val lifecycle: androidx.lifecycle.Lifecycle get() = reg
+    }
+    rule.mainClock.autoAdvance = false
+    rule.setContent {
+      androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLifecycleOwner provides owner) { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    }
+    settle(3)
+    // state written from the test thread: push the snapshot change to the recomposer before advancing the clock
+    fun commit() = androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+    fun ticksOver(ms: Long): Long { val a = AmbientProbe.ticks; repeat((ms / 100).toInt()) { rule.mainClock.advanceTimeBy(100) }; return AmbientProbe.ticks - a }
+    assertTrue("$l: ambient runs on home", ticksOver(1000) >= 10)
+    st.screen = Screen.SETTINGS; commit(); settle(2)
+    assertEquals("$l: stopped while Settings replaces home", 0L, ticksOver(1500))
+    st.screen = Screen.HOME; commit(); settle(3)
+    assertTrue("$l: runs again back home", ticksOver(1000) >= 10)
+    st.menuFor = st.favoriteApps.first(); commit(); settle(2)
+    assertEquals("$l: stopped under the app menu", 0L, ticksOver(1500))
+    st.menuFor = null; commit(); settle(3)
+    assertTrue("$l: runs again after the menu", ticksOver(1000) >= 10)
+    owner.reg.currentState = androidx.lifecycle.Lifecycle.State.STARTED; commit(); settle(1)   // paused: an app is on top
+    assertEquals("$l: stopped while paused", 0L, ticksOver(1500))
+    owner.reg.currentState = androidx.lifecycle.Lifecycle.State.RESUMED; commit(); settle(2)
+    assertTrue("$l: runs again when resumed", ticksOver(1000) >= 10)
+    st.ambient = true; commit(); settle(2)
+    assertEquals("$l: stopped in ambient mode", 0L, ticksOver(1500))
+  }
+  // Console and Magazine have no ambient loop at all (nothing runs between key presses).
+  @Test fun ambientStopsRetro() = ambientStops(HomeLayout.RETRO)
+  @Test fun ambientStopsNeon() = ambientStops(HomeLayout.NEON)
+  @Test fun ambientStopsSpace() = ambientStops(HomeLayout.SPACE)
+  @Test fun ambientStopsComic() = ambientStops(HomeLayout.COMIC)
+  @Test fun ambientStopsArcade() = ambientStops(HomeLayout.ARCADE)
+  @Test fun ambientStopsShelf() = ambientStops(HomeLayout.SHELF)
+  @Test fun ambientNeverRunsOnConsoleOrMagazine() {
+    val st = styleState(HomeLayout.CONSOLE)
+    rule.mainClock.autoAdvance = false
+    rule.setContent { Box(Modifier.fillMaxSize()) { LauncherRoot(st, actions) } }
+    settle(3)
+    val a = AmbientProbe.ticks; repeat(15) { rule.mainClock.advanceTimeBy(100) }
+    assertEquals(0L, AmbientProbe.ticks - a)
+    st.changeLayout(HomeLayout.MAGAZINE); settle(3)
+    val b = AmbientProbe.ticks; repeat(15) { rule.mainClock.advanceTimeBy(100) }
+    assertEquals(0L, AmbientProbe.ticks - b)
   }
   /** Hold-OK/MENU opens the app menu from a styled home, and closing it restores focus to the same item. */
   @Test fun stylesMenuOpensFromHoldOk() {

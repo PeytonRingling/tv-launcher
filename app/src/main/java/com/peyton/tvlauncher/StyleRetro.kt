@@ -15,6 +15,8 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
@@ -123,12 +125,17 @@ private fun RetroScreen(env: HomeEnv, items: List<StyleItem>, drv: FocusDriver, 
       st.weather?.hours?.take(5)?.takeIf { it.isNotEmpty() }?.let { hs ->
         T(hs.joinToString("   ") { "${it.label.replace(" ", "")} ${WeatherApi.fmt(it.tempF, st.celsius)}" }, 20.sp, color = PhosDim, family = Vt323, shadow = PhosGlowSoft)
       }
-      Spacer(Modifier.height(16.dp))
       val v = st.verse
+      val n = v?.text?.length ?: 0
+      Spacer(Modifier.height(if (n > 200) 8.dp else 16.dp))
       if (v != null) {
         T("> cat verse.txt", 22.sp, color = PhosMid, family = Vt323, shadow = PhosGlowSoft)
-        T("\u201C${v.text}\u201D", if (v.text.length > 150) 21.sp else 24.sp, Modifier.padding(top = 2.dp), color = Phos, family = Vt323, shadow = PhosGlowSoft, maxLines = 6)
-        T("  -- ${v.reference.uppercase()}" + (StyleData.notice(st)?.let { "   $it" } ?: ""), 18.sp, Modifier.padding(top = 4.dp), color = PhosMid, family = Vt323, shadow = PhosGlowSoft, maxLines = 2)
+        // steps down with length so even a long verse ends with its closing quote (8 lines at the smallest size)
+        val (size, lines) = when { n <= 110 -> 24.sp to 4; n <= 190 -> 21.sp to 6; n <= 280 -> 19.sp to 7; else -> 17.sp to 8 }
+        T("\u201C${v.text}\u201D", size, Modifier.padding(top = 2.dp), color = Phos, family = Vt323, shadow = PhosGlowSoft, maxLines = lines)
+        T("  -- ${v.reference.uppercase()}", 18.sp, Modifier.padding(top = 4.dp), color = PhosMid, family = Vt323, shadow = PhosGlowSoft, maxLines = 1)
+        // the notice gets its own single line (it used to wrap "reserved." onto a line of its own)
+        StyleData.notice(st)?.let { T("     $it", 15.sp, color = PhosDim, family = Vt323, shadow = PhosGlowSoft, maxLines = 1) }
       }
     }
     // ---------------- right: PROGRAMS menu
@@ -150,7 +157,7 @@ private fun RetroScreen(env: HomeEnv, items: List<StyleItem>, drv: FocusDriver, 
           alpha = (kotlin.math.abs(v) * 0.05f).coerceIn(0f, 0.35f)
         }.background(PhosMid))
         // green rows
-        Column(Modifier.graphicsLayer { translationY = -scrollRows() * RowH.toPx() }) {
+        Column(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).offset { IntOffset(0, (-(scrollRows() * RowH.toPx())).roundToInt()) }) {
           items.forEachIndexed { i, it -> RetroRow(i, it, Phos, PhosDim, Modifier.styleItem(env, items, i, drv, fx, nav)) }
         }
         // the inverse bar: a green bar with the same rows in dark ink, clipped to the bar (no per-row recomposition)
@@ -159,7 +166,7 @@ private fun RetroScreen(env: HomeEnv, items: List<StyleItem>, drv: FocusDriver, 
           drawRect(Phos, Offset(0f, y), Size(size.width, RowH.toPx()))
           clipRect(top = y, bottom = y + RowH.toPx()) { this@drawWithContent.drawContent() }
         }) {
-          Column(Modifier.graphicsLayer { translationY = -scrollRows() * RowH.toPx() }) {
+          Column(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).offset { IntOffset(0, (-(scrollRows() * RowH.toPx())).roundToInt()) }) {
             items.forEachIndexed { i, it -> RetroRow(i, it, CrtBg, CrtBg.copy(alpha = 0.7f), Modifier, glow = false) }
           }
         }

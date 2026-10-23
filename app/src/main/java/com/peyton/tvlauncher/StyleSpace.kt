@@ -1,6 +1,7 @@
 package com.peyton.tvlauncher
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -139,10 +140,13 @@ fun SpaceHome(env: HomeEnv) {
           }
           val k = drv.k(i)
           if (k > 0.01f) drawCircle(Brush.radialGradient(listOf(lighten(items[i].tint, 0.4f).copy(alpha = 0.45f * k), Color.Transparent), Offset(px[i], py[i]), r * 1.9f), r * 1.9f, Offset(px[i], py[i]))
+          // the focus ring goes round the planet: its far half behind the sphere, its near half in front
+          val ringTL = Offset(px[i] - r * 1.45f, py[i] - r * 0.38f); val ringSz = Size(r * 2.9f, r * 0.76f)
+          if (k > 0.01f) drawArc(Color.White, 180f, 180f, false, ringTL, ringSz, alpha = 0.4f * k, style = ringBack)
           drawImage(planets[i], srcOffset = IntOffset.Zero, srcSize = IntSize(PLANET_PX, PLANET_PX),
             dstOffset = IntOffset((px[i] - r).toInt(), (py[i] - r).toInt()), dstSize = IntSize((2 * r).toInt(), (2 * r).toInt()),
             alpha = (0.35f + 0.65f * (depth[i] + 1f) / 2f) * e, filterQuality = FilterQuality.Medium)
-          if (k > 0.01f) drawOval(Color.White, Offset(px[i] - r * 1.45f, py[i] - r * 0.38f), Size(r * 2.9f, r * 0.76f), alpha = 0.55f * k, style = ringBack)
+          if (k > 0.01f) drawArc(Color.White, 0f, 180f, false, ringTL, ringSz, alpha = 0.6f * k, style = ringBack)
         }
         // back half of the orbit, planets behind the sun
         drawArc(Color.White, 180f, 180f, false, Offset(cx - rx * orbitScale, oy - ry * orbitScale), Size(2 * rx * orbitScale, 2 * ry * orbitScale), alpha = 0.16f, style = ringBack)
@@ -154,9 +158,6 @@ fun SpaceHome(env: HomeEnv) {
             dstSize = IntSize((2 * sunR).toInt(), (2 * sunR).toInt()), filterQuality = FilterQuality.Medium)
         }
         drawRect(streak, Offset(0f, cy - 1.5.dp.toPx()), Size(size.width, 3.dp.toPx()))
-        // lens ghosts along the axis through the screen centre
-        val gx = size.width - cx; val gy = size.height - cy
-        for (g in 1..3) { val f = 0.35f * g; drawCircle(Color(0xFFFFC27A), (6 + g * 7).dp.toPx(), Offset(cx + (gx - cx) * f + 140.dp.toPx() * f, cy + (gy - cy) * f), alpha = 0.025f + 0.012f * g) }
         // front half of the orbit, planets in front
         drawArc(Color.White, 0f, 180f, false, Offset(cx - rx * orbitScale, oy - ry * orbitScale), Size(2 * rx * orbitScale, 2 * ry * orbitScale), alpha = 0.28f, style = ringBack)
         for (j in 0 until n) { val i = order[j]; if (depth[i] >= 0f) planet(i) }
@@ -175,7 +176,7 @@ fun SpaceHome(env: HomeEnv) {
       if (!st.use24h) T(fmtAmPm(now), 13.sp, Modifier.padding(top = 0.dp), color = Color(0xFF6A2600), weight = FontWeight.Bold, family = SpaceGrotesk, spacing = 3.sp)
     }
     // ---------------- mission data: date + weather (top-left), verse (top-right), focused app (bottom)
-    Column(Modifier.padding(start = 44.dp, top = 34.dp).graphicsLayer { alpha = (fx.enter.value * 1.6f - 0.4f).coerceIn(0f, 1f) }) {
+    Column(Modifier.padding(start = 48.dp, top = 34.dp).graphicsLayer { alpha = (fx.enter.value * 1.6f - 0.4f).coerceIn(0f, 1f) }) {
       T(java.text.SimpleDateFormat("EEEE, MMMM d", java.util.Locale.US).format(java.util.Date(now)), 18.sp, weight = FontWeight.Bold, family = SpaceGrotesk)
       T("DAY ${StyleData.dayOfYear()} OF ${java.time.LocalDate.now().lengthOfYear()}  ·  ORBIT ${java.time.LocalDate.now().year}", 10.sp, Modifier.padding(top = 2.dp),
         color = Color(0xFF8FA6FF), weight = FontWeight.Bold, spacing = 2.sp, family = SpaceGrotesk)
@@ -187,15 +188,20 @@ fun SpaceHome(env: HomeEnv) {
       StyleData.place(st)?.let { T("SURFACE CONDITIONS · ${it.uppercase()}", 9.5.sp, Modifier.padding(top = 2.dp), color = Ink.copy(alpha = 0.55f), spacing = 1.5.sp, family = SpaceGrotesk) }
     }
     st.verse?.let { v ->
-      Column(Modifier.align(Alignment.TopEnd).padding(end = 44.dp, top = 34.dp).width(250.dp).graphicsLayer { alpha = (fx.enter.value * 1.6f - 0.5f).coerceIn(0f, 1f) },
+      Column(Modifier.align(Alignment.TopEnd).padding(end = 48.dp, top = 34.dp).width(250.dp).graphicsLayer { alpha = (fx.enter.value * 1.6f - 0.5f).coerceIn(0f, 1f) },
         horizontalAlignment = Alignment.End) {
-        T(v.text, if (v.text.length > 140) 11.5.sp else 13.sp, color = Ink.copy(alpha = 0.88f), family = SpaceGrotesk, align = androidx.compose.ui.text.style.TextAlign.End, maxLines = 7)
+        // at most 6 lines so the block always clears the back of the orbit
+        T(v.text, when { v.text.length > 200 -> 11.sp; v.text.length > 140 -> 11.5.sp; else -> 13.sp }, color = Ink.copy(alpha = 0.88f), family = SpaceGrotesk, align = androidx.compose.ui.text.style.TextAlign.End, maxLines = 6)
         T(v.reference.uppercase(), 10.sp, Modifier.padding(top = 4.dp), color = Color(0xFFFFC27A), weight = FontWeight.Bold, spacing = 2.sp, family = SpaceGrotesk)
         StyleData.notice(st)?.let { T(it, 8.5.sp, color = Ink.copy(alpha = 0.5f), family = SpaceGrotesk, align = androidx.compose.ui.text.style.TextAlign.End, maxLines = 2) }
       }
     }
     Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-      Crossfade(drv.focused, animationSpec = tween(260), label = "planet") { i -> T(items.getOrNull(i)?.label ?: "", 24.sp, weight = FontWeight.Bold, family = SpaceGrotesk, shadow = TextShadow) }
+      // the name rises in as the old one sinks away (no letter-on-letter crossfade)
+      androidx.compose.animation.AnimatedContent(drv.focused, label = "planet", contentAlignment = Alignment.Center, transitionSpec = {
+        (androidx.compose.animation.fadeIn(tween(200, delayMillis = 60)) + androidx.compose.animation.slideInVertically(tween(300, easing = StyleDecel)) { it / 3 }) togetherWith
+          (androidx.compose.animation.fadeOut(tween(110)) + androidx.compose.animation.slideOutVertically(tween(180)) { -it / 4 })
+      }) { i -> T(items.getOrNull(i)?.label ?: "", 24.sp, weight = FontWeight.Bold, family = SpaceGrotesk, shadow = TextShadow) }
       T("\u25C0 \u25B6  turn the orbit   ·   OK  launch   ·   hold OK  options", 11.sp, Modifier.padding(top = 4.dp), color = Ink.copy(alpha = 0.5f), family = SpaceGrotesk, spacing = 1.sp)
     }
     // ---------------- focus anchors (the planets are drawn above; these carry focus, keys and the requesters)

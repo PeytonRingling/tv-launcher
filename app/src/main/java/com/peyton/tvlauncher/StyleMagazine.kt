@@ -19,8 +19,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import java.time.Instant
 import java.time.ZoneId
@@ -56,7 +59,7 @@ fun MagazineHome(env: HomeEnv) {
       rotationY = -84f * (1f - e) - 96f * l
     }.drawWithCache {
       val grain = Baked.get("paper", 192, 192) { x, y ->
-        val n = vnoise(x / 3f, y / 3f, 3) * 0.6f + hash01(x * 193 + y, 9) * 0.4f
+        val n = pnoise(x / 3f, y / 3f, 64, 64, 3) * 0.6f + hash01(x * 193 + y, 9) * 0.4f   // 64 whole cells: tiles seamlessly
         Baked.argb(0.10f * n, 0.35f, 0.28f, 0.18f)
       }
       val shader = tiledBrush(grain)
@@ -131,10 +134,11 @@ private fun MagazinePage(env: HomeEnv, items: List<StyleItem>, drv: FocusDriver,
           T("PAGE", 9.5.sp, Modifier.padding(bottom = 4.dp), color = InkSoft, spacing = 1.5.sp, family = Playfair, weight = FontWeight.Bold)
         }
         Rule(0.8.dp, 4.dp)
-        val visible = 10
-        Box(Modifier.fillMaxWidth().height(TocRow * visible).clipToBounds()) {
+        // as many rows as the column has room for; the list scrolls so the focused entry stays 2 rows from the bottom
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f).clipToBounds()) {
+          val visible = (maxHeight / TocRow).toInt().coerceAtLeast(3)
           val scroll = { (drv.pos.value - (visible - 3)).coerceIn(0f, (items.size - visible).coerceAtLeast(0).toFloat()) }
-          Column(Modifier.graphicsLayer { translationY = -scroll() * TocRow.toPx() }) {
+          Column(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).offset { IntOffset(0, (-(scroll() * TocRow.toPx())).roundToInt()) }) {
             items.forEachIndexed { i, item -> TocEntry(env, items, i, item, drv, fx, nav) }
           }
         }
@@ -161,29 +165,58 @@ private fun longDate(z: java.time.ZonedDateTime): String {
 
 @Composable private fun ColumnRule() = Box(Modifier.padding(horizontal = 18.dp).fillMaxHeight().width(0.8.dp).background(PaperInk.copy(alpha = 0.55f)))
 
-/** The verse as a pull quote with a real drop cap: the first three lines wrap beside the cap, the rest run full width. */
+/**
+ * The verse as a pull quote with a real drop cap: the cap spans N body lines (3, or 2 for a short verse); its baseline
+ * sits on the Nth line's baseline and its cap height reaches the first line's cap height, the first N lines wrap beside
+ * it and the rest runs the full column width. A one-line verse gets no drop cap (a red initial in the running text).
+ */
 @Composable
 private fun PullQuote(st: LauncherState) {
   val v = st.verse
   if (v == null) { T(if (!st.verseKey) NO_VERSE_KEY else "Today's verse is on its way.", 14.sp, Modifier.padding(top = 10.dp), color = InkSoft, family = Playfair, maxLines = 2); return }
   val body = v.text.trim()
-  val cap = body.take(1); val rest = body.drop(1)
-  val size = when { body.length > 160 -> 14.5.sp; body.length > 110 -> 16.sp; else -> 18.sp }
-  val style = TextStyle(fontFamily = Playfair, fontSize = size, fontStyle = FontStyle.Italic, lineHeight = size * 1.32f, color = PaperInk)
+  val size = when { body.length > 240 -> 13.5.sp; body.length > 160 -> 14.5.sp; body.length > 110 -> 16.sp; body.length > 40 -> 18.sp; else -> 24.sp }
+  val style = TextStyle(fontFamily = Playfair, fontSize = size, fontStyle = FontStyle.Italic, lineHeight = size * 1.32f, color = PaperInk,
+    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.None))
   val tm = rememberTextMeasurer(); val d = LocalDensity.current
-  val colW = 318.dp; val capW = 52.dp
-  val split = remember(rest, size) {
-    val narrow = with(d) { (colW - capW).roundToPx() }
-    val r = tm.measure(rest, style, constraints = Constraints(maxWidth = narrow))
-    if (r.lineCount <= 3) rest.length else r.getLineEnd(2, visibleEnd = true)
+  val colW = 318.dp
+  class Plan(val lines: Int, val cap: androidx.compose.ui.text.TextLayoutResult?, val capW: Int, val split: Int, val head: androidx.compose.ui.text.TextLayoutResult?)
+  val plan = remember(body, size) {
+    val col = with(d) { colW.roundToPx() }; val gap = with(d) { 7.dp.roundToPx() }
+    val lh = with(d) { (size * 1.32f).toPx() }; val bodyCap = with(d) { size.toPx() } * 0.708f
+    val rest = body.drop(1)
+    fun capFor(n: Int) = tm.measure(body.take(1), TextStyle(fontFamily = DmSerif, fontSize = with(d) { (((n - 1) * lh + bodyCap) / 0.66f).toSp() }, color = Red,
+      lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.None)))
+    var n = 3
+    while (n >= 2) {
+      val cap = capFor(n); val cw = cap.size.width + gap
+      val r = tm.measure(rest, style, constraints = Constraints(maxWidth = col - cw))
+      if (r.lineCount >= n || n == 2 && r.lineCount == 2) {
+        val split = r.getLineEnd(n - 1, visibleEnd = true)
+        return@remember Plan(n, cap, cw, split, r)
+      }
+      n--
+    }
+    Plan(1, null, 0, 0, null)
   }
   Column(Modifier.padding(top = 10.dp)) {
-    Row {
-      T(cap, 62.sp, Modifier.width(capW).padding(top = 2.dp), color = Red, family = DmSerif)
-      androidx.compose.foundation.text.BasicText(rest.substring(0, split).trimEnd(), style = style)
+    if (plan.cap == null) {
+      // too short for a drop cap: red initial inline
+      androidx.compose.foundation.text.BasicText(androidx.compose.ui.text.buildAnnotatedString {
+        pushStyle(androidx.compose.ui.text.SpanStyle(color = Red, fontFamily = DmSerif, fontStyle = FontStyle.Normal, fontSize = size * 1.6f)); append(body.take(1)); pop(); append(body.drop(1))
+      }, style = style)
+    } else {
+      val rest = body.drop(1)
+      val head = plan.head!!; val cap = plan.cap
+      val headH = with(d) { head.getLineBottom(plan.lines - 1).toDp() }
+      val capTop = head.getLineTop(plan.lines - 1) + (head.firstBaseline - head.getLineTop(0)) - cap.firstBaseline
+      Row(Modifier.height(headH)) {
+        androidx.compose.foundation.Canvas(Modifier.width(with(d) { plan.capW.toDp() }).fillMaxHeight()) { drawText(cap, topLeft = Offset(-cap.getLineLeft(0).coerceAtMost(0f), capTop)) }
+        androidx.compose.foundation.text.BasicText(rest.substring(0, plan.split).trimEnd(), style = style, maxLines = plan.lines)
+      }
+      if (plan.split < rest.length) androidx.compose.foundation.text.BasicText(rest.substring(plan.split).trimStart(), style = style, maxLines = 5,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
-    if (split < rest.length) androidx.compose.foundation.text.BasicText(rest.substring(split).trimStart(), style = style, maxLines = 4,
-      overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     T("\u2014 ${v.reference}", 12.sp, Modifier.padding(top = 6.dp), color = Red, family = Playfair, weight = FontWeight.Bold, spacing = 0.8.sp)
     StyleData.notice(st)?.let { T(it, 9.5.sp, Modifier.padding(top = 2.dp), color = InkSoft, family = Playfair, maxLines = 2) }
   }

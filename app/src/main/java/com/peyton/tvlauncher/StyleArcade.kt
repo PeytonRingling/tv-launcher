@@ -21,6 +21,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
@@ -108,15 +110,17 @@ fun ArcadeHome(env: HomeEnv) {
     }
     // ---------------- the rack: two shelves of cartridge slots
     Box(Modifier.align(Alignment.TopCenter).padding(top = 116.dp).size((CartW + CartGap) * cols - CartGap + 40.dp, CartH * 2 + 66.dp).clipToBounds()) {
-      Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 38.dp).graphicsLayer { translationY = -rowScroll * (CartH + 20.dp).toPx() }, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+      Column(Modifier.wrapContentHeight(Alignment.Top, unbounded = true).padding(start = 20.dp, end = 20.dp, top = 38.dp).offset { IntOffset(0, (-(rowScroll * (CartH + 20.dp).toPx())).roundToInt()) }, verticalArrangement = Arrangement.spacedBy(20.dp)) {
         for (r in 0 until rows) Box {
           // slot strip the carts sit in
-          Box(Modifier.align(Alignment.BottomStart).offset(x = (-12).dp, y = 6.dp).size((CartW + CartGap) * cols - CartGap + 24.dp, 40.dp).clip(RoundedCornerShape(6.dp))
+          // requiredSize: the strips are 12dp wider than the row on each side (size() would be clamped to the row and
+          // leave the last cartridge's edge sticking out past the shelf)
+          Box(Modifier.align(Alignment.BottomCenter).offset(y = 6.dp).requiredSize((CartW + CartGap) * cols - CartGap + 24.dp, 40.dp).clip(RoundedCornerShape(6.dp))
             .background(Brush.verticalGradient(listOf(Color(0xFF2A1E3E), Color(0xFF120A1E)))))
           Row(horizontalArrangement = Arrangement.spacedBy(CartGap)) {
             for (c in 0 until cols) { val i = r * cols + c; if (i < n) Cartridge(env, items, i, drv, fx, nav, t, attractK) else Spacer(Modifier.width(CartW)) }
           }
-          Box(Modifier.align(Alignment.BottomStart).offset(x = (-12).dp, y = 6.dp).size((CartW + CartGap) * cols - CartGap + 24.dp, 18.dp)
+          Box(Modifier.align(Alignment.BottomCenter).offset(y = 6.dp).requiredSize((CartW + CartGap) * cols - CartGap + 24.dp, 18.dp)
             .background(Brush.verticalGradient(listOf(Color(0xFF3B2B57), Color(0xFF1C1230)))))
         }
       }
@@ -141,11 +145,15 @@ fun ArcadeHome(env: HomeEnv) {
             Box(Modifier.onSizeChanged { w = it.width }) { PixelText(tick, 9.sp, Color(0xFFFFC94D)) }
             PixelText(tick, 9.sp, Color(0xFFFFC94D))
           }
+          // the ticker fades in and out at its ends instead of cutting letters in half
+          Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(28.dp).background(Brush.horizontalGradient(listOf(Color(0xFF05030A), Color(0x0005030A)))))
+          Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(28.dp).background(Brush.horizontalGradient(listOf(Color(0x0005030A), Color(0xFF05030A)))))
         }
       }
     }
     // ---------------- attract mode
-    if (attractK > 0.001f) Box(Modifier.fillMaxSize().graphicsLayer { alpha = attractK }.background(Color(0xAA05030A)).drawBehind {
+    // (starts under the marquee, so its fast light chase stays bright during attract)
+    if (attractK > 0.001f) Box(Modifier.fillMaxSize().padding(top = 116.dp).graphicsLayer { alpha = attractK }.background(Color(0xAA05030A)).drawBehind {
       val px = 6.dp.toPx(); val sw = Sprite[0].length * px
       val x = ((t.value * 120.dp.toPx()) % (size.width + sw)) - sw; val y = size.height * 0.62f + kotlin.math.sin(t.value * 4f) * 8.dp.toPx()
       for ((ry, row) in Sprite.withIndex()) for ((rx, ch) in row.withIndex()) if (ch == 'X')
@@ -188,7 +196,7 @@ private fun Cartridge(env: HomeEnv, items: List<StyleItem>, i: Int, drv: FocusDr
     .graphicsLayer {
       val k = drv.k(i)
       // entry: carts drop into their slots with a little bounce
-      val e = ((fx.enter.value - 0.12f - 0.03f * i.coerceAtMost(12)) / 0.5f).coerceIn(0f, 1f)
+      val e = stagger(fx.enter.value, 0.12f, 0.03f, i, 0.5f)
       val drop = 1f - (1f - e) * (1f - e)
       val bounce = kotlin.math.sin(e * Math.PI * 2.5).toFloat() * (1f - e) * 10.dp.toPx()
       val l = if (fx.launching == i) fx.launch.value else 0f
@@ -228,7 +236,7 @@ private fun Cartridge(env: HomeEnv, items: List<StyleItem>, i: Int, drv: FocusDr
       Column(horizontalAlignment = Alignment.CenterHorizontally) {
         ItemArt(item, Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)))
         Spacer(Modifier.height(6.dp))
-        T(item.label.uppercase(), 6.5.sp, color = Color.White, family = PressStart, shadow = Shadow(Color.Black, Offset(1.5f, 1.5f), 0f), maxLines = 1)
+        T(item.label.uppercase(), 7.5.sp, color = Color.White, family = PressStart, shadow = Shadow(Color.Black, Offset(1.5f, 1.5f), 0f), maxLines = 1)
       }
     }
   }

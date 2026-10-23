@@ -86,3 +86,21 @@ waking key doesn't move focus. `stylesMenuOpensFromHoldOk` checks MENU and focus
   grain, paper, planets, glow masks). They are cached for the process.
 - The Neon sun is two small offscreen layers redrawn at ≤ 30 fps. Space draws ≈ 200 stars and the planets per frame.
   Both are frame-capped and paused off-screen.
+
+## v4.4.1 polish pass
+
+Shared kit
+- `stagger()`: staggered entry always reaches exactly 1 (a tile left at alpha 0.99 renders offscreen and loses its outline/shadow).
+- Long lists scroll with placement-only `Modifier.offset { }` on an unbounded `wrapContentHeight/Width`, so off-screen rows are never clipped to the parent and scrolling causes no recomposition. Scroll clamps use the real screen width so the last item (and its focus chrome) stays on screen at 1080p and 720p.
+- `pnoise()`: lattice noise that wraps, so baked paper / wood tiles have no seams.
+- `AmbientProbe` counts ambient ticks; tests assert the loop stops under Settings, the app menu, onPause and ambient mode, and restarts on return.
+
+Per style
+- Retro: verse size steps with length; reference on one line, notice on its own line (never orphans a word); layout holds with the notice off.
+- Console: hero key art is masked with a single shader (no seams) and cropped to the top of the banner, so the banner's printed app name is not shown as ghost text; verse card is 2 lines with ellipsis + pinned notice; titles slide/fade instead of crossfading letter-on-letter; launch grows the tile's own art.
+- Magazine: real 3-line drop cap (2-line for short verses) sized from the font cap-height and baseline-aligned to the 3rd line, text flows around then goes full width; TOC shows every row incl. Settings.
+- Neon: smaller sun with clearance under the date; verse block inset from the safe area.
+- Space: lens-ghost circles removed (corona + streak kept); focus ring split into back/front arcs around the planet; planet name slides instead of crossfading.
+- Comic: focus burst is its own layer under all panels and the top tier, so it can never cover the clock/weather/verse or a neighbour.
+- Arcade: shelf strips use `requiredSize` (removed the stray line at the right edge); ticker fades at its edges; attract overlay leaves the marquee bright.
+- Shelf: the record pulls out to the right and the following sleeves slide aside to make room; wood grain tiles seamlessly.

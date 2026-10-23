@@ -193,18 +193,21 @@ fun rememberAmbientTime(env: HomeEnv, fps: Int = 30): State<Float> {
     val step = 1000L / fps; var base = -1L; var last = -step; val from = t.floatValue
     while (true) withFrameMillis { ms ->
       if (base < 0) base = ms
-      if (ms - last >= step) { last = ms; t.floatValue = from + (ms - base) / 1000f }
+      if (ms - last >= step) { last = ms; t.floatValue = from + (ms - base) / 1000f; AmbientProbe.ticks++ }
     }
   }
   return t
 }
+
+/** Counts ambient ticks across every styled home (a plain counter; lets tests prove the motion really stops). */
+object AmbientProbe { @Volatile @JvmField var ticks = 0L }
 
 /** Idle seconds since the last key on this style (for attract modes). Reset by [StyleIdle.poke]. */
 @Stable class StyleIdle { var lastKey by mutableLongStateOf(0L); fun poke(now: Long) { lastKey = now } }
 
 /** App art for any style: the app's banner, else its uniform tile, else a glyph; All apps / Settings get drawn glyphs. */
 @Composable
-fun ItemArt(item: StyleItem, modifier: Modifier = Modifier, preferBanner: Boolean = false, glyph: Color = Color.White) {
+fun ItemArt(item: StyleItem, modifier: Modifier = Modifier, preferBanner: Boolean = false, glyph: Color = Color.White, glyphLift: Dp = 0.dp) {
   val app = item.app
   Box(modifier.background(Brush.linearGradient(listOf(lighten(item.tint, 0.12f), darken(item.tint, 0.35f)))), Alignment.Center) {
     when {
@@ -212,10 +215,10 @@ fun ItemArt(item: StyleItem, modifier: Modifier = Modifier, preferBanner: Boolea
       app?.tile != null -> Image(app.tile, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium)
       app != null && app.banner != null -> Image(app.banner, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium)
       app != null -> T(app.label.take(1).uppercase(), 28.androidx_sp, color = glyph)
-      item.kind == StyleItem.Kind.ALL -> Canvas(Modifier.fillMaxSize(0.42f)) {
+      item.kind == StyleItem.Kind.ALL -> Canvas(Modifier.offset(y = -glyphLift).fillMaxSize(0.38f)) {
         val d = size.width / 3f; for (a in 0..2) for (b in 0..2) drawCircle(glyph, d * 0.24f, Offset(d * (a + 0.5f), d * (b + 0.5f)))
       }
-      else -> Image(rememberVectorPainter(Icons.Filled.Settings), null, Modifier.fillMaxSize(0.44f), colorFilter = ColorFilter.tint(glyph))
+      else -> Image(rememberVectorPainter(Icons.Filled.Settings), null, Modifier.offset(y = -glyphLift).fillMaxSize(0.42f), colorFilter = ColorFilter.tint(glyph))
     }
   }
 }
@@ -268,6 +271,16 @@ fun vnoise(x: Float, y: Float, salt: Int = 0): Float {
   return a + (b - a) * v
 }
 
+/** [vnoise] on a lattice that wraps every [px] × [py] cells, so a texture baked from it tiles seamlessly. */
+fun pnoise(x: Float, y: Float, px: Int, py: Int, salt: Int = 0): Float {
+  val xi = kotlin.math.floor(x).toInt(); val yi = kotlin.math.floor(y).toInt(); val xf = x - xi; val yf = y - yi
+  fun h(a: Int, b: Int) = hash01(Math.floorMod(a, px) * 7919 + Math.floorMod(b, py) * 104729, salt)
+  val u = xf * xf * (3 - 2 * xf); val v = yf * yf * (3 - 2 * yf)
+  val a = h(xi, yi) + (h(xi + 1, yi) - h(xi, yi)) * u
+  val b = h(xi, yi + 1) + (h(xi + 1, yi + 1) - h(xi, yi + 1)) * u
+  return a + (b - a) * v
+}
+
 fun Dp.half() = this / 2
 
 /** A baked texture repeated across whatever it fills. */
@@ -275,3 +288,13 @@ fun tiledBrush(img: ImageBitmap): Brush = ShaderBrush(ImageShader(img, TileMode.
 
 /** Shared ambient-run helper so draw code can ask whether to skip expensive frames. */
 fun lerpF(a: Float, b: Float, t: Float) = a + (b - a) * t
+
+/**
+ * Staggered entry progress for item [i]: starts at [start] + [step]·i, lasts [dur], and always finishes by the end of the
+ * entry (the delay is capped), so no item is left part-faded at rest however many apps are pinned.
+ */
+fun stagger(enter: Float, start: Float, step: Float, i: Int, dur: Float): Float {
+  if (enter >= 1f) return 1f
+  val d = minOf(step * i, (0.98f - start - dur).coerceAtLeast(0f))
+  return ((enter - start - d) / dur).coerceIn(0f, 1f)
+}

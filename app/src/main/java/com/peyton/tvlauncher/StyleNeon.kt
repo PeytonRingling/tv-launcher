@@ -124,7 +124,7 @@ fun NeonHome(env: HomeEnv) {
 
     // ---- clock: neon tubes that ignite (flicker) on first show
     val time = fmtTime(now, st.use24h)
-    Column(Modifier.align(Alignment.TopCenter).padding(top = 26.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.align(Alignment.TopCenter).padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
       Row {
         time.forEachIndexed { ci, ch ->
           Box(Modifier.graphicsLayer { alpha = neonFlicker((fx.enter.value - 0.05f) / 0.8f, ci + 3) }) {
@@ -138,7 +138,7 @@ fun NeonHome(env: HomeEnv) {
       }
     }
     // ---- weather (left) and verse (right): small cyan signage
-    Column(Modifier.padding(start = 44.dp, top = 40.dp).width(220.dp).graphicsLayer { alpha = neonFlicker((fx.enter.value - 0.3f) / 0.7f, 50) }) {
+    Column(Modifier.padding(start = 56.dp, top = 44.dp).width(220.dp).graphicsLayer { alpha = neonFlicker((fx.enter.value - 0.3f) / 0.7f, 50) }) {
       val w = st.weather
       T(w?.let { WeatherApi.fmt(it.tempF, st.celsius) } ?: "--°", 44.sp, color = Color(0xFFFFF4C2), family = Monoton, shadow = Shadow(Color(0xFFFFB13D), Offset.Zero, 24f))
       T((w?.let { WeatherApi.describe(it.code) } ?: if (st.place == null) "Set a ZIP in Settings" else "Forecast loading").uppercase(), 12.sp, color = Color(0xFFD9FBFF),
@@ -146,7 +146,7 @@ fun NeonHome(env: HomeEnv) {
       StyleData.place(st)?.let { T(it.uppercase(), 10.sp, color = NeonCyan.copy(alpha = 0.8f), weight = FontWeight.Bold, spacing = 2.sp, shadow = Shadow(NeonCyan, Offset.Zero, 10f)) }
     }
     st.verse?.let { v ->
-      Column(Modifier.align(Alignment.TopEnd).padding(end = 44.dp, top = 44.dp).width(232.dp).graphicsLayer { alpha = neonFlicker((fx.enter.value - 0.35f) / 0.65f, 60) },
+      Column(Modifier.align(Alignment.TopEnd).padding(end = 56.dp, top = 48.dp).width(240.dp).graphicsLayer { alpha = neonFlicker((fx.enter.value - 0.35f) / 0.65f, 60) },
         horizontalAlignment = Alignment.End) {
         T(v.text, if (v.text.length > 140) 11.5.sp else 13.sp, color = Color(0xFFFFE3F7), weight = FontWeight.Medium, align = androidx.compose.ui.text.style.TextAlign.End,
           shadow = Shadow(NeonPink, Offset.Zero, 12f), maxLines = 7)
@@ -175,13 +175,16 @@ fun NeonHome(env: HomeEnv) {
   }
 }
 
+/** Sun radius: its top stays well clear of the date line under the clock. */
+private val SunR = 98.dp
+
 @Composable
 private fun NeonSun(t: State<Float>, modifier: Modifier, reflect: Boolean) {
   Box(modifier.size(456.dp, 228.dp).graphicsLayer {
     compositingStrategy = CompositingStrategy.Offscreen
     if (reflect) { scaleY = -0.42f; transformOrigin = TransformOrigin(0.5f, 0f); alpha = 0.32f }
   }.drawWithCache {
-    val r = 118.dp.toPx(); val c = Offset(size.width / 2, size.height)
+    val r = SunR.toPx(); val c = Offset(size.width / 2, size.height)
     val disc = Brush.verticalGradient(listOf(Color(0xFFFFF07A), Color(0xFFFFB347), Color(0xFFFF4F8B), Color(0xFFE0247E)), startY = c.y - r, endY = c.y)
     val glow = Brush.radialGradient(
       0f to Color(0x66FF6A8A), 0.35f to Color(0x40FF4F8B), 0.6f to Color(0x1AFF3DCB), 0.8f to Color(0x08FF3DCB), 1f to Color.Transparent, center = c, radius = size.width / 2)
@@ -208,7 +211,7 @@ private fun NeonSign(env: HomeEnv, items: List<StyleItem>, i: Int, item: StyleIt
     Box(Modifier.size(SignW, SignH)
       .graphicsLayer {
         val k = drv.k(i); val s = 1f + 0.10f * k; scaleX = s; scaleY = s; translationY = -8.dp.toPx() * k
-        alpha = neonFlicker((fx.enter.value - 0.25f - i.coerceAtMost(8) * 0.03f) / 0.6f, 100 + i).coerceAtLeast(0.02f)
+        alpha = neonFlicker(stagger(fx.enter.value, 0.25f, 0.03f, i, 0.6f), 100 + i).coerceAtLeast(0.02f)
       }
       .drawWithCache {
         val m = 20.dp.toPx().toInt(); val r = 16.dp.toPx()
@@ -226,9 +229,9 @@ private fun NeonSign(env: HomeEnv, items: List<StyleItem>, i: Int, item: StyleIt
         }
       }
       .styleItem(env, items, i, drv, fx, nav), Alignment.Center) {
-      ItemArt(item, Modifier.size(54.dp).clip(RoundedCornerShape(14.dp)).graphicsLayer { alpha = 0.55f + 0.45f * drv.k(i) })
+      ItemArt(item, Modifier.size(54.dp).clip(RoundedCornerShape(14.dp)).graphicsLayer { alpha = 0.66f + 0.34f * drv.k(i) })
     }
-    Box(Modifier.padding(top = 10.dp).graphicsLayer { alpha = 0.45f + 0.55f * drv.k(i) }) {
+    Box(Modifier.padding(top = 10.dp).graphicsLayer { alpha = 0.62f + 0.38f * drv.k(i) }) {
       T(item.label, 15.sp, color = lighten(neon, 0.55f), weight = FontWeight.Bold, spacing = 1.sp, shadow = Shadow(neon, Offset.Zero, 16f))
     }
   }

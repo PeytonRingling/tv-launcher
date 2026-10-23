@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 
@@ -27,13 +29,29 @@ private val SleeveW = 166.dp
 private val SleeveGap = 24.dp
 private val LedgeY = 446.dp
 private val Cream = Color(0xFFF2E6CF)
+/** How far the disc stands out past its sleeve's right edge when fully out. */
+private val DiscOut = SleeveW * 0.49f
+/** Records to the right of the focused one step aside by this much, so the pulled-out disc never covers their art. */
+private val Push = DiscOut - SleeveGap + 12.dp
+
+/** Push of record [i] (eased exactly like the disc slide of the record before it, so the gap stays clear mid-move). */
+private fun push(drv: FocusDriver, i: Int): Float = StyleDecel.transform((i - drv.pos.value).coerceIn(0f, 1f))
 private val Brass = Color(0xFFC9A45C)
 
-/** Wood grain, baked once: stretched value noise + ring lines in warm browns. */
+/**
+ * Wood grain, baked once: stretched value noise + ring lines in warm browns. Every term is periodic over the bitmap
+ * (whole lattice cells / whole ring cycles per tile), so the texture tiles with no visible seam.
+ */
 private fun woodGrain(key: String, w: Int, h: Int, vertical: Boolean, dark: Float) = Baked.get(key, w, h) { x, y ->
+  val along = if (vertical) h else w; val across = if (vertical) w else h
   val u = if (vertical) y.toFloat() else x.toFloat(); val v = if (vertical) x.toFloat() else y.toFloat()
-  val n = vnoise(u / 60f, v / 3.2f, 5) * 0.6f + vnoise(u / 14f, v / 1.4f, 6) * 0.25f + vnoise(u / 3f, v / 0.8f, 7) * 0.15f
-  val ring = (kotlin.math.sin((v + n * 18f) * 0.9f) * 0.5f + 0.5f).let { it * it }
+  fun cells(len: Int, scale: Float) = maxOf(1, kotlin.math.round(len / scale).toInt())
+  val a1 = cells(along, 60f); val a2 = cells(along, 14f); val a3 = cells(along, 3f)
+  val b1 = cells(across, 3.2f); val b2 = cells(across, 1.4f); val b3 = cells(across, 0.8f)
+  val n = pnoise(u * a1 / along, v * b1 / across, a1, b1, 5) * 0.6f + pnoise(u * a2 / along, v * b2 / across, a2, b2, 6) * 0.25f +
+    pnoise(u * a3 / along, v * b3 / across, a3, b3, 7) * 0.15f
+  val rings = maxOf(1, kotlin.math.round(across * 0.9f / (2 * Math.PI.toFloat())).toInt())
+  val ring = (kotlin.math.sin(2 * Math.PI.toFloat() * rings * v / across + n * 16.2f) * 0.5f + 0.5f).let { it * it }
   val l = (0.55f + 0.35f * n - 0.18f * ring) * dark
   Baked.argb(1f, 0.52f * l, 0.33f * l, 0.19f * l)
 }
@@ -61,8 +79,12 @@ fun ShelfHome(env: HomeEnv) {
   val nav = remember(n) { StyleNav(n, n) }
   VerseFums(st, env.actions)
   val now = rememberNow()
-  val visible = 4.6f
-  val scroll = { (drv.pos.value - 1.4f).coerceIn(0f, (n - visible).coerceAtLeast(0f)) }
+  // Scroll (in records) keeps the focused record ~1.4 slots in; at the end the last record *and* its pulled-out disc
+  // stay on screen with a margin.
+  val screenWdp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.toFloat()
+  val stride = SleeveW.value + SleeveGap.value
+  val maxScroll = ((n - 1) - (screenWdp - 36f - DiscOut.value - SleeveW.value - 64f) / stride).coerceAtLeast(0f)
+  val scroll = { (drv.pos.value - 1.4f).coerceIn(0f, maxScroll) }
 
   Box(Modifier.fillMaxSize().background(Color(0xFF1A110C)).testTag("style-shelf")) {
     // ---------------- wall: vertical planks, warm lamp falloff, window light beam with dust motes
@@ -143,17 +165,17 @@ fun ShelfHome(env: HomeEnv) {
     })
     // ---------------- the records
     Row(Modifier.align(Alignment.TopStart).padding(top = LedgeY - SleeveW - 2.dp).wrapContentWidth(Alignment.Start, unbounded = true)
-      .padding(start = 64.dp).graphicsLayer { translationX = -scroll() * (SleeveW + SleeveGap).toPx() }, horizontalArrangement = Arrangement.spacedBy(SleeveGap)) {
+      .padding(start = 64.dp).offset { IntOffset((-(scroll() * (SleeveW + SleeveGap).toPx())).roundToInt(), 0) }, horizontalArrangement = Arrangement.spacedBy(SleeveGap)) {
       items.forEachIndexed { i, item -> Record(env, items, i, item, drv, fx, nav, t) }
     }
     // brass name plates on the ledge front, under each record
     Row(Modifier.align(Alignment.TopStart).padding(top = LedgeY + 7.dp).wrapContentWidth(Alignment.Start, unbounded = true)
-      .padding(start = 64.dp).graphicsLayer { translationX = -scroll() * (SleeveW + SleeveGap).toPx() }, horizontalArrangement = Arrangement.spacedBy(SleeveGap)) {
+      .padding(start = 64.dp).offset { IntOffset((-(scroll() * (SleeveW + SleeveGap).toPx())).roundToInt(), 0) }, horizontalArrangement = Arrangement.spacedBy(SleeveGap)) {
       items.forEachIndexed { i, item ->
-        Box(Modifier.width(SleeveW), Alignment.Center) {
+        Box(Modifier.width(SleeveW).graphicsLayer { translationX = Push.toPx() * push(drv, i) }, Alignment.Center) {
           Box(Modifier.clip(RoundedCornerShape(2.dp)).background(Brush.verticalGradient(listOf(Color(0xFFE4C989), Brass, Color(0xFF8E6E32)))).padding(horizontal = 8.dp, vertical = 1.dp)
             .graphicsLayer { alpha = 0.75f + 0.25f * drv.k(i) }) {
-            T(item.label.uppercase(), 9.sp, color = Color(0xFF3A2A12), weight = FontWeight.Bold, spacing = 1.2.sp, family = Playfair)
+            T(item.label.uppercase(), 10.sp, color = Color(0xFF3A2A12), weight = FontWeight.Bold, spacing = 1.2.sp, family = Playfair)
           }
         }
       }
@@ -168,13 +190,13 @@ fun ShelfHome(env: HomeEnv) {
 private fun Record(env: HomeEnv, items: List<StyleItem>, i: Int, item: StyleItem, drv: FocusDriver, fx: StyleFx, nav: StyleNav, t: State<Float>) {
   Box(Modifier.zIndex(if (drv.focused == i) 2f else 0f).size(SleeveW).graphicsLayer {
     // entry: records slide onto the shelf from the right, staggered
-    val e = StyleDecel.transform(((fx.enter.value - 0.15f - 0.045f * i.coerceAtMost(10)) / 0.5f).coerceIn(0f, 1f))
-    translationX = (1f - e) * 420.dp.toPx(); alpha = e
+    val e = StyleDecel.transform(stagger(fx.enter.value, 0.15f, 0.045f, i, 0.5f))
+    translationX = (1f - e) * 420.dp.toPx() + Push.toPx() * push(drv, i); alpha = e
   }) {
     // the disc, behind the sleeve: slides out to the right as focus arrives and spins while it's out
     Box(Modifier.size(SleeveW * 0.94f).align(Alignment.Center).graphicsLayer {
       val k = drv.k(i); val l = if (fx.launching == i) StyleAccel.transform(fx.launch.value) else 0f
-      translationX = SleeveW.toPx() * (0.52f * StyleDecel.transform(k) + 1.2f * l)
+      translationX = (DiscOut.toPx() + SleeveW.toPx() * 0.03f) * StyleDecel.transform(k) + SleeveW.toPx() * 1.2f * l
       translationY = -18.dp.toPx() * k - 90.dp.toPx() * l
       val s = 1f + 1.6f * l; scaleX = s; scaleY = s
       rotationZ = if (k > 0.01f || l > 0f) (t.value * 200f + l * 900f) % 360f else 0f
